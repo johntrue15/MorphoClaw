@@ -2,6 +2,13 @@
 """
 MorphoSource API query handler.
 Searches MorphoSource database using API parameters.
+
+This module delegates HTTP transport to :mod:`morphosource_client` which
+provides retry logic, timeouts, and a standardized :class:`SearchResponse`.
+Legacy callers that rely on the ``search_morphosource()`` function continue
+to work unchanged — the only difference is that ``summary["count"]`` now
+reflects the **repository-wide total** (``pages.total_count``) rather than
+the number of items in the current page.
 """
 
 import os
@@ -77,6 +84,7 @@ except ModuleNotFoundError:  # pragma: no cover - fallback when requests missing
     Request = _FallbackRequest
 
 import query_formatter
+from morphosource_client import MorphoSourceClient, SearchResponse
 
 
 def _extract_endpoint(query_info):
@@ -99,33 +107,55 @@ def _extract_endpoint(query_info):
     return 'media'
 
 
-def _extract_result_count(data):
-    """Return the number of results from a MorphoSource API payload."""
+def _extract_counts(data):
+    """Return ``(total_count, returned_count)`` from a MorphoSource API payload.
 
+    ``total_count`` is the repository-wide count from ``pages.total_count``.
+    ``returned_count`` is ``len(items)`` in the current page.
+    When the API does not provide ``pages.total_count``, ``total_count``
+    falls back to ``returned_count`` so callers always get a usable number.
+    """
     if not isinstance(data, dict):
-        return 0
+        return 0, 0
 
-    # Some responses nest the payload under a top-level "response" key. Check
-    # both the top-level dict and the nested payload for result arrays and
-    # pagination metadata so we correctly detect non-empty responses.
     payloads_to_check = [data]
     nested = data.get('response')
     if isinstance(nested, dict):
         payloads_to_check.append(nested)
 
+    returned_count = 0
+    total_count = None
+
     for payload in payloads_to_check:
         for key in ('media', 'physical_objects', 'assets'):
             value = payload.get(key)
             if isinstance(value, list):
-                return len(value)
+                returned_count = len(value)
+                break
 
         pages = payload.get('pages')
         if isinstance(pages, dict):
-            total_count = pages.get('total_count')
-            if isinstance(total_count, int):
-                return total_count
+            tc = pages.get('total_count')
+            if isinstance(tc, int):
+                total_count = tc
 
-    return 0
+        if returned_count > 0 or total_count is not None:
+            break
+
+    if total_count is None:
+        total_count = returned_count
+
+    return total_count, returned_count
+
+
+def _extract_result_count(data):
+    """Return the **total** number of results from a MorphoSource API payload.
+
+    Unlike the previous implementation, this now prefers ``pages.total_count``
+    (the repository-wide total) over ``len(items)`` (the current page size).
+    """
+    total, _returned = _extract_counts(data)
+    return total
 
 
 def _build_feedback(attempt_index, url, response_data):
@@ -204,16 +234,20 @@ def search_morphosource(api_params, formatted_query, query_info=None, max_retrie
                 except ValueError:
                     data = {'status': 'error', 'message': 'Invalid JSON response'}
 
-                result_count = _extract_result_count(data)
-                attempt_entry['result_count'] = result_count
+                total_count, returned_count = _extract_counts(data)
+                attempt_entry['result_count'] = total_count
+                attempt_entry['returned_count'] = returned_count
                 attempt_history.append(attempt_entry)
 
-                print(f"✓ Received response (attempt {attempt}), {result_count} results")
+                print(f"✓ Received response (attempt {attempt}), "
+                      f"{returned_count} returned / {total_count} total results")
 
-                if result_count > 0 or attempt == max_retries + 1:
+                if total_count > 0 or attempt == max_retries + 1:
                     results_summary = {
                         "status": "success",
-                        "count": result_count,
+                        "count": total_count,
+                        "returned_count": returned_count,
+                        "total_count": total_count,
                         "formatted_query": current_formatted_query,
                         "endpoint": endpoint,
                         "attempts": attempt_history
@@ -236,7 +270,9 @@ def search_morphosource(api_params, formatted_query, query_info=None, max_retrie
                     print("No OPENAI_API_KEY available for retry. Returning zero results.")
                     results_summary = {
                         "status": "success",
-                        "count": result_count,
+                        "count": total_count,
+                        "returned_count": returned_count,
+                        "total_count": total_count,
                         "formatted_query": current_formatted_query,
                         "endpoint": endpoint,
                         "attempts": attempt_history
@@ -266,7 +302,9 @@ def search_morphosource(api_params, formatted_query, query_info=None, max_retrie
                     print("No refined query returned; stopping retries.")
                     results_summary = {
                         "status": "success",
-                        "count": result_count,
+                        "count": total_count,
+                        "returned_count": returned_count,
+                        "total_count": total_count,
                         "formatted_query": current_formatted_query,
                         "endpoint": endpoint,
                         "attempts": attempt_history
@@ -301,7 +339,9 @@ def search_morphosource(api_params, formatted_query, query_info=None, max_retrie
                         print("Refined query did not change parameters; stopping retries.")
                         results_summary = {
                             "status": "success",
-                            "count": result_count,
+                            "count": total_count,
+                            "returned_count": returned_count,
+                            "total_count": total_count,
                             "formatted_query": current_formatted_query,
                             "endpoint": endpoint,
                             "attempts": attempt_history

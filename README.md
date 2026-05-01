@@ -153,6 +153,38 @@ python dashboard.py
     parse_morphosource.yml   # CSV comparison workflow
 ```
 
+## API Client Migration (morphosource_client)
+
+All MorphoSource HTTP calls now go through a unified client module
+(`.github/scripts/morphosource_client.py`). This replaces ad-hoc
+`requests.get` calls scattered across `morphosource_api.py`,
+`chat_handler.py`, and `research_agent.py`.
+
+### What changed
+
+| Before | After |
+|--------|-------|
+| `_extract_result_count` returned `len(media_list)` — the current page size | `_extract_counts` returns `(total_count, returned_count)` from `pages.total_count` |
+| `chat_handler.search_morphosource` did raw `requests.get` | Delegates to `MorphoSourceClient.search_media` |
+| `research_agent.fetch_seed_media` / `_fetch_media_list` had inline HTTP | Delegates to `MorphoSourceClient.get_media` / `search_media` |
+| No retry logic on transient 429/5xx errors | Exponential-backoff retry with configurable `max_retries` |
+| No standard response contract | Every search returns `SearchResponse(returned_count, total_count, items, ...)` |
+
+### Breaking changes
+
+- `summary["count"]` in `morphosource_api.search_morphosource` now reports the
+  **repository-wide total** (from `pages.total_count`), not the number of items
+  on the current page. Downstream code that treated `count` as a page-size
+  estimate will now see the correct total.
+- `summary` also includes `returned_count` and `total_count` for callers that
+  need both values.
+
+### Running integration tests
+
+```bash
+MORPHOSOURCE_LIVE_TESTS=1 pytest Tests/test_morphosource_client.py -k Live -v
+```
+
 ## References
 
 - [karpathy/autoresearch](https://github.com/karpathy/autoresearch) -- Autonomous AI research experiments

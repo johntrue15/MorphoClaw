@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Chat handler for processing OpenAI API requests with MorphoSource integration
+Chat handler for processing OpenAI API requests with MorphoSource integration.
+
+Search and media-detail calls are delegated to :mod:`morphosource_client`
+so counts come from API pagination metadata, not ``len(items)``.
 """
 
 import json
@@ -12,6 +15,7 @@ import requests
 from openai import OpenAI
 
 from _helpers import MORPHOSOURCE_API_BASE, get_openai_model
+from morphosource_client import get_client as _get_ms_client
 
 # Conservative token budget for requests (leave headroom for responses)
 MAX_CONTEXT_TOKENS = 6000
@@ -97,46 +101,36 @@ def _truncate_tool_content(content: str) -> str:
 
 
 def search_morphosource(query: str) -> Dict[str, Any]:
-    """Search for specimens in MorphoSource database."""
+    """Search for specimens in MorphoSource database.
+
+    Delegates to :class:`morphosource_client.MorphoSourceClient` so that
+    counts reflect API pagination metadata rather than page item length.
+    """
     try:
-        api_key = os.environ.get('MORPHOSOURCE_API_KEY')
-        headers = {}
-        if api_key:
-            headers['Authorization'] = f'Bearer {api_key}'
-
-        search_url = f"{MORPHOSOURCE_API_BASE}/media"
-        params = {'q': query, 'per_page': 10}
-
-        response = requests.get(search_url, params=params, headers=headers, timeout=30)
-
-        if response.status_code == 200:
-            return response.json()
-        return {
-            "error": f"API returned status {response.status_code}",
-            "message": response.text[:200],
-        }
+        client = _get_ms_client()
+        resp = client.search_media(q=query, per_page=10)
+        if resp.error:
+            return {"error": resp.error, "message": resp.error}
+        result = resp.raw_response or {}
+        result["_total_count"] = resp.total_count
+        result["_returned_count"] = resp.returned_count
+        return result
 
     except Exception as exc:  # pragma: no cover - network errors are logged, not raised
         return {"error": str(exc)}
 
 
 def get_morphosource_media(media_id: str) -> Dict[str, Any]:
-    """Get details for a specific media item."""
+    """Get details for a specific media item.
+
+    Delegates to :class:`morphosource_client.MorphoSourceClient`.
+    """
     try:
-        api_key = os.environ.get('MORPHOSOURCE_API_KEY')
-        headers = {}
-        if api_key:
-            headers['Authorization'] = f'Bearer {api_key}'
-
-        media_url = f"{MORPHOSOURCE_API_BASE}/media/{media_id}"
-        response = requests.get(media_url, headers=headers, timeout=30)
-
-        if response.status_code == 200:
-            return response.json()
-        return {
-            "error": f"API returned status {response.status_code}",
-            "message": response.text[:200],
-        }
+        client = _get_ms_client()
+        record = client.get_media(media_id)
+        if record.error:
+            return {"error": record.error, "message": record.error}
+        return record.data
 
     except Exception as exc:  # pragma: no cover - network errors are logged, not raised
         return {"error": str(exc)}

@@ -62,6 +62,7 @@ else:
 
 import query_formatter
 import morphosource_api
+from morphosource_client import get_client as _get_ms_client
 
 try:
     import requests as _requests
@@ -270,23 +271,14 @@ def _call_llm(messages, max_tokens=2000, json_mode=False, label="LLM", tier="pea
 
 def fetch_seed_media(media_id):
     media_id = media_id.strip().lstrip("0") or "0"
-    padded_id = media_id.zfill(9)
-    url = f"{MORPHOSOURCE_API_BASE}/media/{padded_id}"
-    log.info("Fetching seed media: %s", url)
-    headers = {"Accept": "application/json"}
-    api_key = os.environ.get("MORPHOSOURCE_API_KEY")
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
+    log.info("Fetching seed media: %s", media_id)
     try:
-        if _requests:
-            resp = _requests.get(url, headers=headers, timeout=30)
-            if resp.status_code == 200:
-                return resp.json()
-        else:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                if resp.getcode() == 200:
-                    return json.loads(resp.read().decode("utf-8"))
+        client = _get_ms_client()
+        record = client.get_media(media_id)
+        if record.error:
+            log.error("Seed media fetch error: %s", record.error)
+            return None
+        return record.data or None
     except Exception as exc:
         log.error("Seed media fetch failed: %s", exc)
     return None
@@ -462,13 +454,17 @@ def execute_searches(queries):
             params = fmt.get("api_params", {"q": qt, "per_page": 10})
             sr = morphosource_api.search_morphosource(
                 params, fmt.get("formatted_query", qt), query_info=fmt)
-            cnt = sr.get("summary", {}).get("count", 0)
+            summary = sr.get("summary", {})
+            total_count = summary.get("total_count", summary.get("count", 0))
+            returned_count = summary.get("returned_count", total_count)
             results.append({
                 "query": qt, "rationale": item.get("rationale", ""),
                 "formatted_query": fmt.get("formatted_query") or qt,
                 "api_endpoint": fmt.get("api_endpoint") or "media",
-                "result_count": cnt,
-                "result_status": sr.get("summary", {}).get("status", "unknown"),
+                "result_count": total_count,
+                "returned_count": returned_count,
+                "total_count": total_count,
+                "result_status": summary.get("status", "unknown"),
                 "result_data": sr.get("full_data", {}),
             })
         except Exception as exc:
@@ -476,7 +472,8 @@ def execute_searches(queries):
             results.append({
                 "query": qt, "rationale": item.get("rationale", ""),
                 "formatted_query": qt, "api_endpoint": "unknown",
-                "result_count": 0, "result_status": f"error: {exc}", "result_data": {},
+                "result_count": 0, "returned_count": 0, "total_count": 0,
+                "result_status": f"error: {exc}", "result_data": {},
             })
     return results
 
@@ -1293,34 +1290,21 @@ def run_research_program(topic, research_depth=10, github_issues=3,
 
 
 def _fetch_media_list(list_id):
-    """Fetch media list contents from MorphoSource API."""
-    url = f"{MORPHOSOURCE_API_BASE}/media?media_list={list_id}&per_page=50&page=1&locale=en"
+    """Fetch media list contents from MorphoSource API.
+
+    Uses :class:`morphosource_client.MorphoSourceClient` so that
+    ``total_count`` comes from pagination metadata, not ``len(items)``.
+    """
     log.info("Fetching media list %s", list_id)
-    headers = {"Accept": "application/json"}
-    api_key = os.environ.get("MORPHOSOURCE_API_KEY")
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
     try:
-        if _requests:
-            resp = _requests.get(url, headers=headers, timeout=30)
-            if resp.status_code == 200:
-                data = resp.json()
-                response = data.get("response", data)
-                media_items = response.get("media", [])
-                pages = response.get("pages", {})
-                total = pages.get("total_count", len(media_items))
-                log.info("Media list %s: %d items (showing %d)", list_id, total, len(media_items))
-                return {"items": media_items, "total_count": total, "list_id": list_id}
-        else:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                if resp.getcode() == 200:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    response = data.get("response", data)
-                    media_items = response.get("media", [])
-                    pages = response.get("pages", {})
-                    total = pages.get("total_count", len(media_items))
-                    return {"items": media_items, "total_count": total, "list_id": list_id}
+        client = _get_ms_client()
+        resp = client.search_media(per_page=50, page=1, media_list=list_id)
+        if resp.error:
+            log.error("Media list %s fetch error: %s", list_id, resp.error)
+            return None
+        total = resp.total_count if resp.total_count is not None else resp.returned_count
+        log.info("Media list %s: %d items (showing %d)", list_id, total, resp.returned_count)
+        return {"items": resp.items, "total_count": total, "list_id": list_id}
     except Exception as exc:
         log.error("Failed to fetch media list %s: %s", list_id, exc)
     return None
