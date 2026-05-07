@@ -135,10 +135,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Restore specimen cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.autoresearchclaw/specimens
           key: specimens-${{ runner.os }}-${{ github.run_id }}
@@ -190,7 +190,7 @@ jobs:
 
       - name: Upload research artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: research-report
           path: |
@@ -201,7 +201,7 @@ jobs:
 
       - name: Upload knowledge graph
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: knowledge-graph
           path: |

@@ -44,3 +44,8 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
+    # Group all GitHub Actions updates together
+    groups:
+      github-actions:
+        patterns:
+          - "*"
