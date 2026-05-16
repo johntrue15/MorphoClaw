@@ -1,0 +1,98 @@
+name: Bootstrap nnInteractive
+
+# One-time (or on-demand) installation of the nnInteractive Python backend
+# and (optionally) the SlicerNNInteractive 3D Slicer extension on the
+# AutoResearchClaw self-hosted Mac mini runner.
+#
+# Re-running this workflow is safe — install_nninteractive.sh is idempotent
+# unless `force_reinstall` is set.
+
+concurrency:
+  group: nninteractive-bootstrap
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_reinstall:
+        description: 'Wipe the existing venv and reinstall from scratch'
+        required: false
+        type: boolean
+        default: false
+      install_slicer_extension:
+        description: 'Also install the SlicerNNInteractive 3D Slicer extension'
+        required: false
+        type: boolean
+        default: true
+      python_bin:
+        description: 'Python interpreter to build the venv with'
+        required: false
+        type: string
+        default: 'python3'
+      torch_index_url:
+        description: 'Override pip index URL for torch wheels (e.g. https://download.pytorch.org/whl/cu126)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  bootstrap:
+    name: Bootstrap nnInteractive on self-hosted runner
+    runs-on: self-hosted
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Print runner info
+        run: |
+          echo "Host: $(hostname)"
+          echo "OS:   $(uname -a)"
+          echo "Python: $(${{ inputs.python_bin || 'python3' }} --version 2>&1)"
+          if command -v nvidia-smi >/dev/null 2>&1; then
+            nvidia-smi || true
+          else
+            echo "No NVIDIA GPU — nnInteractive will run on CPU/MPS (slower)"
+          fi
+
+      - name: Install nnInteractive Python backend
+        env:
+          NNINTERACTIVE_PY: ${{ inputs.python_bin || 'python3' }}
+          NNINTERACTIVE_FORCE: ${{ inputs.force_reinstall && '1' || '0' }}
+          NNINTERACTIVE_TORCH_INDEX: ${{ inputs.torch_index_url }}
+        run: |
+          chmod +x .github/scripts/install_nninteractive.sh
+          .github/scripts/install_nninteractive.sh
+
+      - name: Print sanity report
+        run: |
+          NNI_HOME="${NNINTERACTIVE_HOME:-$HOME/.autoresearchclaw/nninteractive}"
+          echo "Venv: $NNI_HOME"
+          ls -la "$NNI_HOME/bin" | head -20 || true
+          echo "Models:"
+          ls -la "$NNI_HOME/models" 2>/dev/null || echo "  (none)"
+          echo "Disk usage:"
+          du -sh "$NNI_HOME" 2>/dev/null || true
+
+      - name: Install SlicerNNInteractive extension (optional)
+        if: ${{ inputs.install_slicer_extension }}
+        continue-on-error: true
+        env:
+          PATH: /opt/anaconda3/bin:/usr/local/bin:/usr/bin:/bin
+        run: |
+          SLICER_BIN="${SLICER_BIN:-/Applications/Slicer.app/Contents/MacOS/Slicer}"
+          if [ ! -x "$SLICER_BIN" ]; then
+            echo "Slicer not found at $SLICER_BIN — skipping client extension install"
+            exit 0
+          fi
+          echo "Installing SlicerNNInteractive into $SLICER_BIN..."
+          "$SLICER_BIN" --no-splash --python-script \
+            .github/scripts/slicer_install_nninteractive.py || true
+
+      - name: Summary
+        run: |
+          echo "::notice::nnInteractive bootstrap complete."
+          echo "Activate the venv with: source $HOME/.autoresearchclaw/nninteractive/bin/activate"
+          echo "Then run: nninteractive_loop.py --input <volume> --goal '<what to segment>'"

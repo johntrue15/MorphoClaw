@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -59,18 +59,18 @@ log = logging.getLogger("IntegrityGraph")
 # stable across runs (mirrors the Plato's Cave "ontology compliance"
 # pre-flight check).
 ROLES: Tuple[str, ...] = (
-    "ResearchTopic",        # The research goal as written by the user
-    "SourceRecord",         # A MorphoSource media or physical-object record
-    "Specimen",             # The physical object behind a media record
-    "MediaList",            # A MorphoSource media list (batch seed)
-    "Query",                # A query the agent issued against MorphoSource
-    "SearchResult",         # The aggregated result of a query
-    "Discovery",            # An LLM-extracted discovery / claim
-    "Citation",             # A DOI / paper extracted from cite_as / description
-    "AISegmentation",       # A 3D-Slicer / MONAI / nnInteractive output
-    "Measurement",          # A quantitative measurement (volume, distance, etc.)
-    "ExpertReview",         # Human accept / edit / reject decision
-    "ReleaseDecision",      # The aggregated, propagated verdict node
+    "ResearchTopic",  # The research goal as written by the user
+    "SourceRecord",  # A MorphoSource media or physical-object record
+    "Specimen",  # The physical object behind a media record
+    "MediaList",  # A MorphoSource media list (batch seed)
+    "Query",  # A query the agent issued against MorphoSource
+    "SearchResult",  # The aggregated result of a query
+    "Discovery",  # An LLM-extracted discovery / claim
+    "Citation",  # A DOI / paper extracted from cite_as / description
+    "AISegmentation",  # A 3D-Slicer / MONAI / nnInteractive output
+    "Measurement",  # A quantitative measurement (volume, distance, etc.)
+    "ExpertReview",  # Human accept / edit / reject decision
+    "ReleaseDecision",  # The aggregated, propagated verdict node
 )
 
 METRIC_KEYS: Tuple[str, ...] = (
@@ -82,7 +82,7 @@ METRIC_KEYS: Tuple[str, ...] = (
     "authority_support",
 )
 
-DEFAULT_METRICS: Dict[str, float] = {k: 0.5 for k in METRIC_KEYS}
+DEFAULT_METRICS: Dict[str, float] = dict.fromkeys(METRIC_KEYS, 0.5)
 
 # Release-decision blends.  Each weight maps a metric key to a positive
 # float; the score for a release dimension is the weighted mean across
@@ -115,7 +115,7 @@ STATUS_THRESHOLDS: Tuple[Tuple[float, str], ...] = (
     (0.85, "verified"),
     (0.65, "conditionally_verified"),
     (0.45, "needs_review"),
-    (0.0,  "rejected"),
+    (0.0, "rejected"),
 )
 
 
@@ -155,9 +155,7 @@ class IntegrityNode:
 
     def __post_init__(self) -> None:
         if self.role not in ROLES:
-            raise ValueError(
-                f"Unknown role {self.role!r}; valid roles: {', '.join(ROLES)}"
-            )
+            raise ValueError(f"Unknown role {self.role!r}; valid roles: {', '.join(ROLES)}")
         # Ensure all six metric keys are present and clamped.
         normalised: Dict[str, float] = {}
         for key in METRIC_KEYS:
@@ -270,14 +268,10 @@ class IntegrityGraph:
                 if pid not in self._nodes:
                     errors.append(f"node {node.id}: dangling parent {pid}")
                 if pid >= node.id:
-                    errors.append(
-                        f"node {node.id}: parent {pid} is not earlier (cycle risk)"
-                    )
+                    errors.append(f"node {node.id}: parent {pid} is not earlier (cycle risk)")
             for key, val in node.metrics.items():
                 if not (0.0 <= val <= 1.0):
-                    errors.append(
-                        f"node {node.id}: metric {key}={val} outside [0,1]"
-                    )
+                    errors.append(f"node {node.id}: metric {key}={val} outside [0,1]")
             seen_ids.add(node.id)
         return errors
 
@@ -342,8 +336,8 @@ class IntegrityGraph:
 
         # Aggregate across non-Topic nodes (the topic is the "hypothesis";
         # it has no metrics worth blending into the release decision).
-        per_metric_sums: Dict[str, float] = {k: 0.0 for k in METRIC_KEYS}
-        per_metric_counts: Dict[str, int] = {k: 0 for k in METRIC_KEYS}
+        per_metric_sums: Dict[str, float] = dict.fromkeys(METRIC_KEYS, 0.0)
+        per_metric_counts: Dict[str, int] = dict.fromkeys(METRIC_KEYS, 0)
         for node in self._nodes.values():
             if node.role == "ResearchTopic":
                 continue
@@ -448,8 +442,7 @@ class IntegrityGraph:
         lines.append("")
         lines.append("| Dimension | Score | Badge |")
         lines.append("|-----------|------:|:-----:|")
-        for dim in ("scientific_validity", "ai_training_validity",
-                     "commercial_release_validity"):
+        for dim in ("scientific_validity", "ai_training_validity", "commercial_release_validity"):
             s = decision[dim]
             lines.append(f"| `{dim}` | {s:.2f} | {self._badge_emoji(s)} |")
         lines.append("")
@@ -500,11 +493,11 @@ class IntegrityGraph:
 
 
 __all__ = [
-    "ROLES",
-    "METRIC_KEYS",
     "DEFAULT_METRICS",
+    "METRIC_KEYS",
     "RELEASE_WEIGHTS",
+    "ROLES",
     "STATUS_THRESHOLDS",
-    "IntegrityNode",
     "IntegrityGraph",
+    "IntegrityNode",
 ]

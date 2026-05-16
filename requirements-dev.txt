@@ -14,6 +14,16 @@ flake8>=6.0.0
 flake8-docstrings>=1.7.0
 pylint>=3.0.0
 
+# Ruff: fast, single-binary linter + formatter used by the CI workflow.
+# Mirrors the .flake8 rule set (see pyproject.toml `[tool.ruff]`).
+ruff>=0.6.0
+
+# YAML linting (CI uses yamllint for .github/workflows/)
+yamllint>=1.35.0
+
+# Dependency-CVE scanner (CI runs `pip-audit` in advisory mode)
+pip-audit>=2.7.0
+
 # Type checking
 mypy>=1.0.0
 

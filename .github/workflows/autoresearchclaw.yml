@@ -41,6 +41,21 @@ on:
         required: false
         type: string
         default: 'gpt-5.4'
+      enable_nninteractive:
+        description: 'Enable iterative nnInteractive segmentation (LLM paint loop)'
+        required: false
+        type: boolean
+        default: false
+      nninteractive_goal:
+        description: 'Segmentation goal for nnInteractive, e.g. "Segment the cranial cavity"'
+        required: false
+        type: string
+        default: ''
+      nninteractive_max_steps:
+        description: 'Max LLM iterations for the nnInteractive paint loop'
+        required: false
+        type: number
+        default: 12
       run_integrity_verifier:
         description: 'Run the Plato''s-Cave integrity verifier after the run completes'
         required: false
@@ -142,19 +157,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Restore specimen cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.autoresearchclaw/specimens
-          key: specimens-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: |
-            specimens-${{ runner.os }}-
+      # Note: actions/cache was removed. This job only runs on the self-hosted
+      # Mac mini where ~/.autoresearchclaw/specimens already persists between
+      # runs on local disk. The cache was creating a unique key per run_id and
+      # then trying to tar/upload the entire 35+ GB directory in the post-step,
+      # which exhausted free space on the runner ("No space left on device")
+      # and exceeded GitHub Actions' 10 GB per-repo cache limit anyway.
 
       - name: Set up Python
         run: |
           export PATH="/opt/anaconda3/bin:$PATH"
           python3 --version
           python3 -m pip install --quiet openai requests python-dotenv flask
+
+      - name: Ensure nnInteractive is bootstrapped (idempotent)
+        if: ${{ inputs.enable_nninteractive }}
+        run: |
+          NNI_HOME="${NNINTERACTIVE_HOME:-$HOME/.autoresearchclaw/nninteractive}"
+          if [ -x "$NNI_HOME/bin/python" ] && \
+             "$NNI_HOME/bin/python" -c "import nnInteractive" >/dev/null 2>&1; then
+            echo "nnInteractive venv already present at $NNI_HOME — skipping bootstrap"
+          else
+            echo "Bootstrapping nnInteractive at $NNI_HOME (first run, may take ~10 min)"
+            chmod +x .github/scripts/install_nninteractive.sh
+            .github/scripts/install_nninteractive.sh
+          fi
 
       - name: Run research agent
         id: research
@@ -167,6 +194,9 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ needs.create-research-issue.outputs.issue_number }}
           DEBUG: 'false'
+          ENABLE_NNINTERACTIVE: ${{ inputs.enable_nninteractive && '1' || '0' }}
+          NNINTERACTIVE_GOAL: ${{ inputs.nninteractive_goal }}
+          NNINTERACTIVE_MAX_STEPS: ${{ inputs.nninteractive_max_steps || 12 }}
         working-directory: .github/scripts
         run: |
           MEDIA_ARG=""
@@ -212,6 +242,18 @@ jobs:
           path: |
             ~/.autoresearchclaw/graphs/*.json
             ~/.autoresearchclaw/graphs/*.html
+          if-no-files-found: ignore
+
+      - name: Upload nnInteractive segmentations
+        if: ${{ always() && inputs.enable_nninteractive }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nninteractive-segmentations
+          path: |
+            ~/.autoresearchclaw/specimens/*/nninteractive/*.nii.gz
+            ~/.autoresearchclaw/specimens/*/nninteractive/*.json
+            ~/.autoresearchclaw/specimens/*/nninteractive/*.png
+            ~/.autoresearchclaw/specimens/*/nninteractive/*.md
           if-no-files-found: ignore
 
       - name: Log specimen cache status

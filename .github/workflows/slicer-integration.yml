@@ -1,0 +1,139 @@
+name: SlicerMorph Integration
+
+# Headless 3D Slicer + SlicerMorph regression tests.
+#
+# Runs on the self-hosted Mac mini runner where 3D Slicer is installed
+# and the MorphoSource specimen cache lives on local disk
+# (``~/.autoresearchclaw/specimens`` and ``data/morphosource-download-*``).
+# These tests are skipped in the cloud ``code-quality`` workflow
+# because GitHub-hosted runners have neither Slicer nor the 112 MB
+# cached chameleon-skull PLY.
+#
+# What this exercises:
+#   * ``slicer.util.loadModel`` on the tiny deterministic fixture
+#     ``Tests/fixtures/tetrahedron.ply`` (smoke test).
+#   * ``slicer.util.loadModel`` on the cached MorphoSource chameleon
+#     skull PLY found under ``data/morphosource-download-*/``
+#     (production-realistic regression).
+#   * Optional: SlicerMorph extension availability via ``import GPA``.
+#
+# Triggers:
+#   * Manual ``workflow_dispatch`` for on-demand verification.
+#   * Pushes to main that touch SlicerMorph-related Python or the
+#     load probe script.
+#   * Pull requests that touch the same files (best-effort -- the
+#     self-hosted runner has to be online).
+
+on:
+  workflow_dispatch:
+    inputs:
+      require_slicermorph:
+        description: 'Fail if the SlicerMorph extension is missing'
+        required: false
+        type: boolean
+        default: false
+      slicer_timeout_s:
+        description: 'Per-test Slicer subprocess timeout in seconds'
+        required: false
+        type: string
+        default: '300'
+  push:
+    branches: [main, develop]
+    paths:
+      - '.github/scripts/slicer_*.py'
+      - '.github/scripts/slicer_load_test.py'
+      - '.github/scripts/_helpers.py'
+      - 'Tests/test_slicer_cached_model.py'
+      - 'Tests/fixtures/**'
+      - '.github/workflows/slicer-integration.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - '.github/scripts/slicer_*.py'
+      - '.github/scripts/slicer_load_test.py'
+      - '.github/scripts/_helpers.py'
+      - 'Tests/test_slicer_cached_model.py'
+      - 'Tests/fixtures/**'
+      - '.github/workflows/slicer-integration.yml'
+
+concurrency:
+  group: slicer-integration-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  pull-requests: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  slicer-load-cache:
+    name: Slicer loads cached MorphoSource model
+    runs-on: self-hosted
+    timeout-minutes: 25
+    env:
+      SLICER_BIN: /Applications/Slicer.app/Contents/MacOS/Slicer
+      SLICER_REQUIRE_INTEGRATION: '1'
+      SLICER_TEST_TIMEOUT_S: ${{ inputs.slicer_timeout_s || '300' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        run: |
+          export PATH="/opt/anaconda3/bin:$PATH"
+          python3 --version
+          python3 -m pip install --quiet -r requirements-test.txt
+
+      - name: Confirm Slicer install + report environment
+        run: |
+          if [ ! -x "$SLICER_BIN" ]; then
+            echo "::error::SLICER_BIN does not exist or is not executable: $SLICER_BIN"
+            exit 1
+          fi
+          "$SLICER_BIN" --version || true
+          echo "Cached MorphoSource downloads on this runner:"
+          ls -1 data/morphosource-download-* 2>/dev/null | head -20 || \
+            echo "  (none -- only the shipped fixture will be exercised)"
+
+      - name: Run SlicerMorph cached-model regression tests
+        id: pytest
+        env:
+          PATH: /opt/anaconda3/bin:/usr/local/bin:/usr/bin:/bin
+          SLICER_REQUIRE_SLICERMORPH: ${{ inputs.require_slicermorph && '1' || '0' }}
+        run: |
+          export PYTHONUNBUFFERED=1
+          python3 -m pytest -v --tb=short \
+            Tests/test_slicer_cached_model.py \
+            | tee slicer-integration.log
+
+      - name: Append summary
+        if: always()
+        run: |
+          {
+            echo "## SlicerMorph Integration Results"
+            echo ""
+            echo "**Slicer binary:** \`$SLICER_BIN\`"
+            echo ""
+            echo "**Cached downloads scanned:**"
+            echo '```'
+            ls -1 data/morphosource-download-* 2>/dev/null | head -10 || \
+              echo "  (none -- only the shipped fixture exercised)"
+            echo '```'
+            echo ""
+            echo "**Test output (tail):**"
+            echo '```'
+            tail -60 slicer-integration.log 2>/dev/null || echo "(no log)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Slicer integration log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slicer-integration-log
+          path: slicer-integration.log
+          if-no-files-found: ignore
+          retention-days: 30

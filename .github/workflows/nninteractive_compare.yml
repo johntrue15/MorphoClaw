@@ -1,0 +1,198 @@
+name: nnInteractive Comparison Test
+
+# Test the AutoResearchClaw nnInteractive paint loop against a curated
+# MorphoSource ground-truth segmentation (a segmented mesh derivative of
+# the same physical specimen). Outputs Dice / IoU / Hausdorff metrics, a
+# 3×3 overlay panel, and a Markdown report.
+
+concurrency:
+  group: nninteractive-compare-${{ github.run_id }}
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+    inputs:
+      ct_media_id:
+        description: 'MorphoSource media ID of the unsegmented CT volume (open download)'
+        required: false
+        type: string
+        default: ''
+      gt_media_id:
+        description: 'MorphoSource media ID of the segmented derivative mesh (open download, same specimen)'
+        required: false
+        type: string
+        default: ''
+      auto_discover:
+        description: 'Auto-pick the first viable open-download CT↔mesh pair'
+        required: false
+        type: boolean
+        default: false
+      discover_query:
+        description: 'Search query used when auto-discovering (e.g. "primate skull mesh")'
+        required: false
+        type: string
+        default: 'skull mesh'
+      require_taxonomy:
+        description: 'Optional taxonomy filter for auto-discover (e.g. "Chamaeleo")'
+        required: false
+        type: string
+        default: ''
+      goal:
+        description: 'Plain-English nnInteractive goal (e.g. "Segment the cranial bone")'
+        required: true
+        type: string
+        default: 'Segment the cranial bone'
+      max_steps:
+        description: 'Maximum LLM iterations in the paint loop'
+        required: false
+        type: number
+        default: 12
+
+jobs:
+  compare:
+    name: Run nnInteractive vs MorphoSource GT
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Print runner info
+        run: |
+          echo "Host: $(hostname)"
+          echo "OS:   $(uname -a)"
+          if command -v nvidia-smi >/dev/null 2>&1; then
+            nvidia-smi || true
+          else
+            echo "No NVIDIA GPU — nnInteractive will run on CPU/MPS"
+          fi
+
+      - name: Ensure nnInteractive is bootstrapped (idempotent)
+        run: |
+          NNI_HOME="${NNINTERACTIVE_HOME:-$HOME/.autoresearchclaw/nninteractive}"
+          if [ -x "$NNI_HOME/bin/python" ] && \
+             "$NNI_HOME/bin/python" -c "import nnInteractive" >/dev/null 2>&1; then
+            echo "nnInteractive venv already present at $NNI_HOME"
+          else
+            echo "Bootstrapping nnInteractive at $NNI_HOME (~10 min on first run)"
+            chmod +x .github/scripts/install_nninteractive.sh
+            .github/scripts/install_nninteractive.sh
+          fi
+
+      - name: Set up Python (parent env)
+        run: |
+          export PATH="/opt/anaconda3/bin:$PATH"
+          python3 --version
+          python3 -m pip install --quiet requests python-dotenv
+
+      - name: Run comparison
+        id: compare
+        env:
+          PATH: /opt/anaconda3/bin:/usr/local/bin:/usr/bin:/bin
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MORPHOSOURCE_API_KEY: ${{ secrets.MORPHOSOURCE_API_KEY }}
+          NNINTERACTIVE_VISION_MODEL: gpt-4o
+        working-directory: .github/scripts
+        run: |
+          mkdir -p /tmp/nni_compare
+          ARGS=()
+          if [ -n "${{ inputs.ct_media_id }}" ]; then
+            ARGS+=(--ct-media-id "${{ inputs.ct_media_id }}")
+          fi
+          if [ -n "${{ inputs.gt_media_id }}" ]; then
+            ARGS+=(--gt-media-id "${{ inputs.gt_media_id }}")
+          fi
+          if [ "${{ inputs.auto_discover }}" = "true" ]; then
+            ARGS+=(--auto-discover)
+            ARGS+=(--query "${{ inputs.discover_query }}")
+            if [ -n "${{ inputs.require_taxonomy }}" ]; then
+              ARGS+=(--require-taxonomy "${{ inputs.require_taxonomy }}")
+            fi
+          fi
+          ARGS+=(--goal "${{ inputs.goal }}")
+          ARGS+=(--max-steps "${{ inputs.max_steps || 12 }}")
+          ARGS+=(--output-dir /tmp/nni_compare)
+
+          set +e
+          python3 nninteractive_compare.py "${ARGS[@]}" \
+            > /tmp/nni_compare/run.log 2>&1
+          EXIT_CODE=$?
+          echo "compare exit code: $EXIT_CODE"
+          tail -40 /tmp/nni_compare/run.log
+          exit $EXIT_CODE
+
+      - name: Upload comparison artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nninteractive-comparison
+          path: |
+            /tmp/nni_compare/**/*.json
+            /tmp/nni_compare/**/*.md
+            /tmp/nni_compare/**/*.png
+            /tmp/nni_compare/**/*.nii.gz
+            /tmp/nni_compare/run.log
+          if-no-files-found: warn
+
+      - name: Post comparison summary as a GitHub issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/github-script@v8
+        with:
+          retries: 3
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const root = '/tmp/nni_compare';
+
+            // Walk the output tree and pick the most recent pair dir
+            let pairDirs = [];
+            try {
+              for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+                if (entry.isDirectory() && entry.name.includes('__vs__')) {
+                  pairDirs.push(path.join(root, entry.name));
+                }
+              }
+            } catch (e) {
+              core.warning(`Could not list ${root}: ${e.message}`);
+            }
+            pairDirs.sort();
+
+            const ctId = `${{ inputs.ct_media_id }}`.trim();
+            const gtId = `${{ inputs.gt_media_id }}`.trim();
+            const goal = `${{ inputs.goal }}`;
+
+            let body = `### nnInteractive vs MorphoSource GT\n\n**Goal:** ${goal}\n\n`;
+            if (pairDirs.length === 0) {
+              body += `_No comparison output produced. Check the run log artifact._\n`;
+            } else {
+              const pairDir = pairDirs[pairDirs.length - 1];
+              const reportPath = path.join(pairDir, 'report.md');
+              const metricsPath = path.join(pairDir, 'metrics.json');
+              if (fs.existsSync(reportPath)) {
+                body += fs.readFileSync(reportPath, 'utf8');
+              } else if (fs.existsSync(metricsPath)) {
+                const m = JSON.parse(fs.readFileSync(metricsPath, 'utf8'));
+                body += `\`\`\`json\n${JSON.stringify(m, null, 2)}\n\`\`\`\n`;
+              } else {
+                body += `_Comparison directory exists at \`${pairDir}\` but no report was generated._\n`;
+              }
+            }
+
+            body += `\n---\n_Workflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}_\n`;
+
+            const title = ctId && gtId
+              ? `nnInteractive test: ${ctId} vs ${gtId}`
+              : `nnInteractive test: ${goal}`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['nninteractive', 'segmentation-test'],
+            });

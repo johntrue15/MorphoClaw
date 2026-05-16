@@ -36,7 +36,7 @@ import json
 import logging
 import os
 import re
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
 from _helpers import safe_first
@@ -54,9 +54,14 @@ def _get_call_llm():
     if _call_llm is None:
         try:
             from _helpers import call_llm
+
             _call_llm = call_llm
         except ImportError:
-            _call_llm = lambda *_a, **_kw: None  # type: ignore
+
+            def _noop_call_llm(*_a, **_kw):  # type: ignore[no-redef]
+                return None
+
+            _call_llm = _noop_call_llm
     return _call_llm
 
 
@@ -122,9 +127,14 @@ class MetadataVerifier:
     def verify(self, record: Dict[str, Any]) -> VerifierResult:
         result = VerifierResult(verifier=self.name)
         if not isinstance(record, dict):
-            result.metrics = {"credibility": 0.0, "relevance": 0.0,
-                              "evidence_strength": 0.0, "method_rigor": 0.0,
-                              "reproducibility": 0.0, "authority_support": 0.0}
+            result.metrics = {
+                "credibility": 0.0,
+                "relevance": 0.0,
+                "evidence_strength": 0.0,
+                "method_rigor": 0.0,
+                "reproducibility": 0.0,
+                "authority_support": 0.0,
+            }
             result.notes.append("record is not a dict")
             return result
 
@@ -136,28 +146,25 @@ class MetadataVerifier:
         media_id = safe_first(record.get("id"))
         org = safe_first(record.get("physical_object_organization"))
         taxon = safe_first(record.get("physical_object_taxonomy_name"))
-        doi_text = " ".join(
-            safe_first(record.get(k)) for k in ("doi", "cite_as", "description")
-        )
+        doi_text = " ".join(safe_first(record.get(k)) for k in ("doi", "cite_as", "description"))
         has_doi = bool(re.search(r"10\.\d{4,}/", doi_text))
 
         # The cache marked this record as "resolved" if there's at least
         # one substantive field beyond the bare media id.  We no longer
         # make a second API call here.
-        substantive_fields = [
-            f for f in present if f not in ("id",)
-        ]
+        substantive_fields = [f for f in present if f not in ("id",)]
         resolved = bool(media_id) and len(substantive_fields) >= 2
         result.evidence["resolved_via_cache"] = resolved
 
         # Score the six dimensions
         result.metrics = {
-            "credibility":      0.5 + 0.3 * (1.0 if media_id else 0.0)
-                                    + 0.2 * (1.0 if resolved else 0.0),
-            "relevance":        coverage,
+            "credibility": 0.5
+            + 0.3 * (1.0 if media_id else 0.0)
+            + 0.2 * (1.0 if resolved else 0.0),
+            "relevance": coverage,
             "evidence_strength": coverage,
-            "method_rigor":     0.5 + 0.5 * (1.0 if media_id and taxon else 0.0),
-            "reproducibility":  0.7 if media_id else 0.3,
+            "method_rigor": 0.5 + 0.5 * (1.0 if media_id and taxon else 0.0),
+            "reproducibility": 0.7 if media_id else 0.3,
             "authority_support": (0.5 if org else 0.2) + (0.4 if has_doi else 0.0),
         }
 
@@ -202,8 +209,14 @@ class FileVerifier:
         result = VerifierResult(verifier=self.name)
         if not isinstance(record, dict):
             result.metrics = dict.fromkeys(
-                ("credibility", "relevance", "evidence_strength",
-                 "method_rigor", "reproducibility", "authority_support"),
+                (
+                    "credibility",
+                    "relevance",
+                    "evidence_strength",
+                    "method_rigor",
+                    "reproducibility",
+                    "authority_support",
+                ),
                 0.0,
             )
             result.notes.append("record is not a dict")
@@ -240,14 +253,16 @@ class FileVerifier:
                 except ValueError:
                     slice_count = 0
 
-        result.evidence.update({
-            "modality": modality,
-            "media_type": media_type,
-            "device": device,
-            "spacing_values": spacing_numeric,
-            "spacing_consistent": spacing_consistent,
-            "slice_count": slice_count,
-        })
+        result.evidence.update(
+            {
+                "modality": modality,
+                "media_type": media_type,
+                "device": device,
+                "spacing_values": spacing_numeric,
+                "spacing_consistent": spacing_consistent,
+                "slice_count": slice_count,
+            }
+        )
 
         if analysis:
             result.evidence["analysis_summary"] = {
@@ -269,11 +284,11 @@ class FileVerifier:
         media_type_score = 0.8 if media_type else 0.4
 
         result.metrics = {
-            "credibility":      modality_score,
-            "relevance":        media_type_score,
+            "credibility": modality_score,
+            "relevance": media_type_score,
             "evidence_strength": (spacing_score + media_type_score) / 2.0,
-            "method_rigor":     0.7 if device else 0.4,
-            "reproducibility":  spacing_score,
+            "method_rigor": 0.7 if device else 0.4,
+            "reproducibility": spacing_score,
             "authority_support": 0.5,
         }
 
@@ -326,8 +341,14 @@ class LineageVerifier:
         result = VerifierResult(verifier=self.name)
         if not isinstance(record, dict):
             result.metrics = dict.fromkeys(
-                ("credibility", "relevance", "evidence_strength",
-                 "method_rigor", "reproducibility", "authority_support"),
+                (
+                    "credibility",
+                    "relevance",
+                    "evidence_strength",
+                    "method_rigor",
+                    "reproducibility",
+                    "authority_support",
+                ),
                 0.0,
             )
             return result
@@ -346,18 +367,17 @@ class LineageVerifier:
             except Exception as exc:
                 result.notes.append(f"parent cache lookup raised: {exc}")
 
-        result.evidence.update({
-            "media_type": media_type,
-            "parent_id": parent_id,
-            "is_derived": derived,
-            "is_raw": raw,
-        })
+        result.evidence.update(
+            {
+                "media_type": media_type,
+                "parent_id": parent_id,
+                "is_derived": derived,
+                "is_raw": raw,
+            }
+        )
 
         # Score
-        if raw and not derived:
-            credibility = 0.85
-            evidence = 0.8
-        elif derived and parent_id and parent_resolved:
+        if (raw and not derived) or (derived and parent_id and parent_resolved):
             credibility = 0.85
             evidence = 0.8
         elif derived and parent_id:
@@ -372,11 +392,11 @@ class LineageVerifier:
             evidence = 0.5
 
         result.metrics = {
-            "credibility":      credibility,
-            "relevance":        0.7 if media_type else 0.3,
+            "credibility": credibility,
+            "relevance": 0.7 if media_type else 0.3,
             "evidence_strength": evidence,
-            "method_rigor":     0.75 if (raw or parent_id) else 0.45,
-            "reproducibility":  0.8 if parent_resolved else (0.6 if parent_id else 0.4),
+            "method_rigor": 0.75 if (raw or parent_id) else 0.45,
+            "reproducibility": 0.8 if parent_resolved else (0.6 if parent_id else 0.4),
             "authority_support": 0.6,
         }
 
@@ -420,12 +440,26 @@ class AIQCVerifier:
 
     # Heuristic vocabulary used in the offline fallback path.
     _CONCRETE_TERMS = (
-        "specimen", "media", "morphosource", "ct", "mesh", "scan",
-        "voxel", "modality", "open", "doi", "taxonomy",
+        "specimen",
+        "media",
+        "morphosource",
+        "ct",
+        "mesh",
+        "scan",
+        "voxel",
+        "modality",
+        "open",
+        "doi",
+        "taxonomy",
     )
     _VAGUE_TERMS = (
-        "interesting", "promising", "could be", "might be",
-        "potentially", "various", "several",
+        "interesting",
+        "promising",
+        "could be",
+        "might be",
+        "potentially",
+        "various",
+        "several",
     )
 
     def __init__(self, use_llm: bool = True, tier: str = "fast"):
@@ -437,15 +471,15 @@ class AIQCVerifier:
         concrete_hits = sum(1 for t in self._CONCRETE_TERMS if t in text)
         vague_hits = sum(1 for t in self._VAGUE_TERMS if t in text)
         length_bonus = min(len(text) / 400.0, 1.0)
-        signal = max(0.0, min(1.0,
-            0.4 + 0.08 * concrete_hits - 0.08 * vague_hits + 0.2 * length_bonus
-        ))
+        signal = max(
+            0.0, min(1.0, 0.4 + 0.08 * concrete_hits - 0.08 * vague_hits + 0.2 * length_bonus)
+        )
         return {
-            "credibility":      signal,
-            "relevance":        signal,
+            "credibility": signal,
+            "relevance": signal,
             "evidence_strength": signal * 0.9,
-            "method_rigor":     signal * 0.85,
-            "reproducibility":  signal * 0.7,
+            "method_rigor": signal * 0.85,
+            "reproducibility": signal * 0.7,
             "authority_support": 0.4,
         }
 
@@ -467,16 +501,17 @@ class AIQCVerifier:
             return result
 
         call_llm = _get_call_llm()
-        user_msg = (
-            f"Research topic: {topic or '(unknown)'}\n\n"
-            f"Claim under review:\n{claim}\n\n"
-        )
+        user_msg = f"Research topic: {topic or '(unknown)'}\n\n" f"Claim under review:\n{claim}\n\n"
         if context:
-            user_msg += f"Context (verbatim from MorphoSource search):\n{json.dumps(context)[:1500]}\n"
+            user_msg += (
+                f"Context (verbatim from MorphoSource search):\n{json.dumps(context)[:1500]}\n"
+            )
 
         content = call_llm(
-            [{"role": "system", "content": _AI_QC_SYSTEM_PROMPT},
-             {"role": "user",   "content": user_msg}],
+            [
+                {"role": "system", "content": _AI_QC_SYSTEM_PROMPT},
+                {"role": "user", "content": user_msg},
+            ],
             max_tokens=400,
             json_mode=True,
             label="IntegrityAIQC",
@@ -497,8 +532,14 @@ class AIQCVerifier:
             return result
 
         metrics = {}
-        for key in ("credibility", "relevance", "evidence_strength",
-                    "method_rigor", "reproducibility", "authority_support"):
+        for key in (
+            "credibility",
+            "relevance",
+            "evidence_strength",
+            "method_rigor",
+            "reproducibility",
+            "authority_support",
+        ):
             try:
                 metrics[key] = float(parsed.get(key, 0.5))
             except (TypeError, ValueError):
@@ -521,12 +562,22 @@ _POSITIVE_REACTIONS = {"+1", "heart", "hooray", "rocket"}
 _NEGATIVE_REACTIONS = {"-1", "confused"}
 
 _REVIEW_KEYWORDS_ACCEPT = (
-    "approved", "looks good", "lgtm", "verified", "accept",
-    "correct", "confirmed",
+    "approved",
+    "looks good",
+    "lgtm",
+    "verified",
+    "accept",
+    "correct",
+    "confirmed",
 )
 _REVIEW_KEYWORDS_REJECT = (
-    "incorrect", "wrong", "rejected", "not valid", "bad data",
-    "duplicate", "needs fix",
+    "incorrect",
+    "wrong",
+    "rejected",
+    "not valid",
+    "bad data",
+    "duplicate",
+    "needs fix",
 )
 
 
@@ -542,9 +593,14 @@ class ExpertVerifier:
 
     def __init__(self, bot_logins: Optional[List[str]] = None):
         # github-actions[bot] is what `actions/github-script` posts as.
-        self.bot_logins = set(bot_logins or [
-            "github-actions[bot]", "actions-user", "AutoResearchClaw",
-        ])
+        self.bot_logins = set(
+            bot_logins
+            or [
+                "github-actions[bot]",
+                "actions-user",
+                "AutoResearchClaw",
+            ]
+        )
 
     @staticmethod
     def _is_bot(login: str) -> bool:
@@ -586,17 +642,19 @@ class ExpertVerifier:
             (lab.get("name") if isinstance(lab, dict) else str(lab))
             for lab in issue.get("labels", [])
         ]
-        label_accept = any(l in {"verified", "approved", "expert-reviewed"} for l in labels)
-        label_reject = any(l in {"rejected", "needs-fix", "invalid"} for l in labels)
+        label_accept = any(lab in {"verified", "approved", "expert-reviewed"} for lab in labels)
+        label_reject = any(lab in {"rejected", "needs-fix", "invalid"} for lab in labels)
 
-        result.evidence.update({
-            "human_comment_count": len(human_comments),
-            "accept_keywords": accept_hits,
-            "reject_keywords": reject_hits,
-            "positive_reactions": positive,
-            "negative_reactions": negative,
-            "labels": labels,
-        })
+        result.evidence.update(
+            {
+                "human_comment_count": len(human_comments),
+                "accept_keywords": accept_hits,
+                "reject_keywords": reject_hits,
+                "positive_reactions": positive,
+                "negative_reactions": negative,
+                "labels": labels,
+            }
+        )
 
         # Score
         if label_reject:
@@ -614,21 +672,21 @@ class ExpertVerifier:
             result.notes.append("no human reviewer activity detected")
 
         result.metrics = {
-            "credibility":      base,
-            "relevance":        0.7 if human_comments else 0.5,
+            "credibility": base,
+            "relevance": 0.7 if human_comments else 0.5,
             "evidence_strength": 0.6 if human_comments else 0.4,
-            "method_rigor":     0.6,
-            "reproducibility":  0.6,
+            "method_rigor": 0.6,
+            "reproducibility": 0.6,
             "authority_support": base,
         }
         return result
 
 
 __all__ = [
-    "VerifierResult",
-    "MetadataVerifier",
-    "FileVerifier",
-    "LineageVerifier",
     "AIQCVerifier",
     "ExpertVerifier",
+    "FileVerifier",
+    "LineageVerifier",
+    "MetadataVerifier",
+    "VerifierResult",
 ]

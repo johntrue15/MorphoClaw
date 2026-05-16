@@ -77,8 +77,99 @@ extend-exclude = '''
   | dist
   | Tests
   | data
+  | docs/archive
 )/
 '''
+
+# Ruff: fast, single-binary replacement for flake8 + isort + pyupgrade.
+# We deliberately mirror the rule set already encoded in `.flake8` so
+# the CI workflow and existing local pre-commit hooks agree on what
+# "lint-clean" means.  See https://docs.astral.sh/ruff/rules/.
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+extend-exclude = [
+    ".git",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "venv",
+    "env",
+    "ENV",
+    "build",
+    "dist",
+    "*.egg-info",
+    ".tox",
+    "Tests",
+    "data",
+    "docs/archive",
+]
+
+[tool.ruff.lint]
+# Rule groups (loosely mapped from flake8 + sensible Ruff additions).
+# Anything not in this list is silent.
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes (undefined names, unused imports, ...)
+    "I",    # isort (replaces standalone isort)
+    "B",    # flake8-bugbear (likely bugs)
+    "UP",   # pyupgrade (modernise stdlib idioms)
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "PL",   # pylint subset
+    "RUF",  # Ruff-specific
+]
+# Match `.flake8` ignores (E203 / W503 conflict with Black; E501 is
+# governed by `line-length`; the rest are pragmatic for a research
+# repo with notebook-style scripts).
+ignore = [
+    "E203",    # whitespace before ':' (Black-compatible)
+    "E501",    # handled by line-length
+    "PLR0913", # too many arguments — common in research code
+    "PLR0912", # too many branches — ditto
+    "PLR0915", # too many statements — ditto
+    "PLR0911", # too many return statements
+    "PLR2004", # magic numbers — too noisy for plotting / scoring code
+    "B008",    # function call in default arg (used for dataclass defaults)
+    "SIM108",  # ternary suggestions — sometimes hurts readability
+    "PLC0415", # import-outside-top-level (we use lazy imports for optional deps)
+    "PLW0603", # global-statement (module-level cache state is deliberate)
+    "RUF002",  # ambiguous-unicode-character-docstring (we use en-dashes intentionally)
+    "RUF003",  # ambiguous-unicode-character-comment
+    # ----------------------------------------------------------------
+    # PEP 585 / PEP 604 typing modernisation.  The repo still ships
+    # for Python 3.9 (see [project] requires-python).  Migrating to
+    # `dict[str, int]` and `int | None` will be a dedicated PR once
+    # the floor is raised to 3.10.  Until then, treat as advisory.
+    # ----------------------------------------------------------------
+    "UP006",   # non-pep585-annotation
+    "UP007",   # non-pep604-annotation-union
+    "UP035",   # deprecated-import (typing.Dict, typing.List, ...)
+    "UP037",   # quoted-annotation
+    "UP045",   # non-pep604-annotation-optional
+]
+
+# Project-wide "always-blocking" rules.  These are what the CI's
+# "syntax-and-correctness" gate enforces against the entire repo,
+# even for files that have not been touched by the current PR.  Keep
+# this set small and uncontroversial.
+[tool.ruff.lint.per-file-ignores]
+"Tests/**" = ["PLR2004", "S101", "B018"]
+"setup.py" = ["B"]
+"verify_pixel_spacing.py" = ["E"]  # legacy script with known pre-existing issues
+"compare.py" = ["E"]                # ditto
+
+[tool.ruff.lint.isort]
+known-first-party = ["morpho", "metadata_to_morphsource"]
+combine-as-imports = true
+
+[tool.ruff.format]
+# Defer formatting to Black for now; this prevents Ruff's formatter
+# from competing with the pre-commit Black hook.
+quote-style = "preserve"
+indent-style = "space"
 
 [tool.isort]
 profile = "black"

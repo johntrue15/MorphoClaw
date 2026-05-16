@@ -11,24 +11,24 @@ on:
 jobs:
   compare_and_verify:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-      
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: '3.10'
-      
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pandas numpy fuzzywuzzy python-Levenshtein matplotlib seaborn ipywidgets requests
-      
+
       - name: Create output directory
         run: mkdir -p data/output
-      
+
       - name: Run comparison script
         env:
           CSV_FILENAME: ${{ github.event.inputs.csv_filename }}
@@ -41,18 +41,18 @@ jobs:
           n
           EOF
         shell: bash
-      
+
       - name: Run verification script
         env:
           MORPHOSOURCE_API_KEY: ${{ secrets.MORPHOSOURCE_API_KEY }}
         run: |
           echo "Running verification on matched data"
           python verify_pixel_spacing.py --csv data/output/matched.csv --output data/output/confirmed_matches.csv --api-key "$MORPHOSOURCE_API_KEY"
-      
+
       - name: List output files
         run: |
           ls -la data/output/
-      
+
       - name: Upload result as artifact
         uses: actions/upload-artifact@v4
         with:

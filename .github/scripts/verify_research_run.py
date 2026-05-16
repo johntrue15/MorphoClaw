@@ -50,7 +50,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple
 
 from _helpers import (
     AUTORESEARCHCLAW_HOME,
@@ -71,8 +71,11 @@ load_dotenv()
 
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
 logging.basicConfig(
-    level=logging.DEBUG if os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
-    else logging.INFO,
+    level=(
+        logging.DEBUG
+        if os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
+        else logging.INFO
+    ),
     format=LOG_FORMAT,
     stream=sys.stdout,
 )
@@ -104,8 +107,8 @@ class GitHubClient:
     self-hosted runner.
     """
 
-    _MAX_RETRIES = 4
-    _RETRYABLE_STATUSES = {500, 502, 503, 504}
+    _MAX_RETRIES: ClassVar[int] = 4
+    _RETRYABLE_STATUSES: ClassVar[Set[int]] = {500, 502, 503, 504}
 
     def __init__(self, repo: str, token: str):
         self.repo = repo
@@ -138,8 +141,7 @@ class GitHubClient:
             except urllib.error.HTTPError as exc:
                 if exc.code in self._RETRYABLE_STATUSES and attempt < self._MAX_RETRIES:
                     delay = min(5 * (2 ** (attempt - 1)), 60)
-                    log.warning("GH %s %s -> %d, retrying in %ds",
-                                method, path, exc.code, delay)
+                    log.warning("GH %s %s -> %d, retrying in %ds", method, path, exc.code, delay)
                     time.sleep(delay)
                     continue
                 log.warning("GH %s %s -> %d", method, path, exc.code)
@@ -147,8 +149,7 @@ class GitHubClient:
             except Exception as exc:
                 if attempt < self._MAX_RETRIES:
                     delay = min(5 * (2 ** (attempt - 1)), 60)
-                    log.warning("GH %s %s failed: %s, retrying in %ds",
-                                method, path, exc, delay)
+                    log.warning("GH %s %s failed: %s, retrying in %ds", method, path, exc, delay)
                     time.sleep(delay)
                     continue
                 log.warning("GH %s %s failed: %s", method, path, exc)
@@ -158,7 +159,8 @@ class GitHubClient:
     def get_issue(self, number: int) -> Optional[Dict[str, Any]]:
         # Use squirrel-girl preview to get reactions counts.
         status, data = self._api(
-            "GET", f"issues/{number}",
+            "GET",
+            f"issues/{number}",
             accept="application/vnd.github.squirrel-girl-preview+json",
         )
         return data if status == 200 else None
@@ -167,8 +169,9 @@ class GitHubClient:
         status, data = self._api("GET", f"issues/{number}/comments")
         return data if status == 200 and isinstance(data, list) else []
 
-    def list_issues_by_label(self, label: str, since: str = "", state: str = "all"
-                              ) -> List[Dict[str, Any]]:
+    def list_issues_by_label(
+        self, label: str, since: str = "", state: str = "all"
+    ) -> List[Dict[str, Any]]:
         path = f"issues?labels={label}&state={state}&per_page=100"
         if since:
             path += f"&since={since}"
@@ -228,7 +231,8 @@ def extract_discoveries(body: str) -> List[str]:
         return []
     m = re.search(
         r"###\s*(?:Key\s+)?Discoveries\s*\n+(.*?)(?:\n###|\Z)",
-        body, re.IGNORECASE | re.DOTALL,
+        body,
+        re.IGNORECASE | re.DOTALL,
     )
     if not m:
         # Fall back to top-level bullets in the whole body
@@ -236,8 +240,8 @@ def extract_discoveries(body: str) -> List[str]:
     else:
         bullets = _DISCOVERY_BULLET_RE.findall(m.group(1))
     out = []
-    for b in bullets:
-        b = b.strip()
+    for raw in bullets:
+        b = raw.strip()
         if 6 <= len(b) <= 600 and not b.startswith("**"):
             out.append(b)
     return out[:20]
@@ -257,8 +261,7 @@ def extract_queries(body: str) -> List[Tuple[str, int]]:
 def extract_topic(issue: Dict[str, Any]) -> str:
     """Best-effort topic extraction from the issue body."""
     body = issue.get("body") or ""
-    m = re.search(r"\*\*Research Topic:\*\*\s*\n+(.+?)(?:\n\*\*|\n###|\n---|\Z)",
-                  body, re.DOTALL)
+    m = re.search(r"\*\*Research Topic:\*\*\s*\n+(.+?)(?:\n\*\*|\n###|\n---|\Z)", body, re.DOTALL)
     if m:
         return m.group(1).strip()
     title = issue.get("title") or ""
@@ -309,8 +312,17 @@ def build_graph(
     topic_id = graph.add_node(
         role="ResearchTopic",
         text=topic[:300] or "(no topic)",
-        metrics={k: 0.85 for k in ("credibility", "relevance", "evidence_strength",
-                                    "method_rigor", "reproducibility", "authority_support")},
+        metrics=dict.fromkeys(
+            (
+                "credibility",
+                "relevance",
+                "evidence_strength",
+                "method_rigor",
+                "reproducibility",
+                "authority_support",
+            ),
+            0.85,
+        ),
         verifier="(seed)",
     )
 
@@ -320,20 +332,16 @@ def build_graph(
     # share a single fetch per media id.
     metadata_v = MetadataVerifier(allow_network=allow_network)
     file_v = FileVerifier()
-    lineage_v = LineageVerifier(cache=cache if allow_network else None,
-                                  allow_network=allow_network)
+    lineage_v = LineageVerifier(cache=cache if allow_network else None, allow_network=allow_network)
 
-    full_text = (issue.get("body") or "") + "\n" + "\n".join(
-        c.get("body", "") for c in comments
-    )
+    full_text = (issue.get("body") or "") + "\n" + "\n".join(c.get("body", "") for c in comments)
     for child, ccomments in child_issues:
         full_text += "\n" + (child.get("body") or "")
         for cc in ccomments:
             full_text += "\n" + cc.get("body", "")
 
     media_ids = extract_media_ids(full_text)
-    log.info("Found %d unique media IDs across run (capped to %d)",
-             len(media_ids), max_media)
+    log.info("Found %d unique media IDs across run (capped to %d)", len(media_ids), max_media)
 
     source_node_ids: Dict[str, int] = {}
     record_cache: Dict[str, Dict[str, Any]] = {}
@@ -346,7 +354,7 @@ def build_graph(
         snid = graph.add_node(
             role="SourceRecord",
             text=f"MorphoSource media {mid}: "
-                 f"{safe_first(record.get('title')) or '(no title)'}"[:200],
+            f"{safe_first(record.get('title')) or '(no title)'}"[:200],
             parents=[topic_id],
             metrics=meta_result.metrics,
             evidence={"media_id": mid, **meta_result.evidence},
@@ -359,9 +367,11 @@ def build_graph(
         # Modelling them as children-of-source preserves the trust gate.
         file_result = file_v.verify(record)
         graph.add_node(
-            role="Specimen" if file_result.evidence.get("media_type", "")
-                                .lower().startswith("specimen")
-                            else "SourceRecord",
+            role=(
+                "Specimen"
+                if file_result.evidence.get("media_type", "").lower().startswith("specimen")
+                else "SourceRecord"
+            ),
             text=f"File metadata for media {mid}",
             parents=[snid],
             metrics=file_result.metrics,
@@ -394,11 +404,11 @@ def build_graph(
             text=query_text[:200],
             parents=[topic_id],
             metrics={
-                "credibility":      0.7,
-                "relevance":        0.5 + 0.4 * hits_norm,
+                "credibility": 0.7,
+                "relevance": 0.5 + 0.4 * hits_norm,
                 "evidence_strength": hits_norm,
-                "method_rigor":     0.7,
-                "reproducibility":  0.85,
+                "method_rigor": 0.7,
+                "reproducibility": 0.85,
                 "authority_support": 0.4,
             },
             evidence={"query": query_text, "hits": hits},
@@ -409,11 +419,11 @@ def build_graph(
             text=f"{hits} results for {query_text!r}",
             parents=[qid],
             metrics={
-                "credibility":      0.85 if hits > 0 else 0.4,
-                "relevance":        hits_norm,
+                "credibility": 0.85 if hits > 0 else 0.4,
+                "relevance": hits_norm,
                 "evidence_strength": hits_norm,
-                "method_rigor":     0.7,
-                "reproducibility":  0.85,
+                "method_rigor": 0.7,
+                "reproducibility": 0.85,
                 "authority_support": 0.4,
             },
             evidence={"hits": hits},
@@ -453,8 +463,8 @@ def build_graph(
     graph.add_node(
         role="ExpertReview",
         text=f"Expert review of issue #{issue_number} "
-             f"({expert_result.evidence.get('human_comment_count', 0)} human comments, "
-             f"{expert_result.evidence.get('positive_reactions', 0)} positive reactions)",
+        f"({expert_result.evidence.get('human_comment_count', 0)} human comments, "
+        f"{expert_result.evidence.get('positive_reactions', 0)} positive reactions)",
         parents=parents_for_expert,
         metrics=expert_result.metrics,
         evidence=expert_result.evidence,
@@ -472,11 +482,11 @@ def build_graph(
                 text=f"DOI {doi} (from media {mid})",
                 parents=[source_node_ids[mid]],
                 metrics={
-                    "credibility":      0.9,
-                    "relevance":        0.7,
+                    "credibility": 0.9,
+                    "relevance": 0.7,
                     "evidence_strength": 0.7,
-                    "method_rigor":     0.7,
-                    "reproducibility":  0.85,
+                    "method_rigor": 0.7,
+                    "reproducibility": 0.85,
                     "authority_support": 0.95,
                 },
                 evidence={"doi": doi, "source": citation_text[:200]},
@@ -519,8 +529,7 @@ def build_polite_client(timeout_s: float = 10.0, max_retries: int = 1):
         from morphosource_client import MorphoSourceClient
     except ImportError:
         return None
-    return MorphoSourceClient(timeout=timeout_s, max_retries=max_retries,
-                               backoff_factor=1.0)
+    return MorphoSourceClient(timeout=timeout_s, max_retries=max_retries, backoff_factor=1.0)
 
 
 def make_morphosource_fetcher(client) -> "Optional[Any]":
@@ -572,8 +581,8 @@ def discover_child_issues(
     if explicit:
         return [n for n in explicit if n != parent.get("number")]
 
-    text_blob = (parent.get("body") or "") + "\n" + "\n".join(
-        c.get("body", "") for c in parent_comments
+    text_blob = (
+        (parent.get("body") or "") + "\n" + "\n".join(c.get("body", "") for c in parent_comments)
     )
     referenced = []
     for m in _CHILD_NUMBER_RE.finditer(text_blob):
@@ -590,9 +599,9 @@ def discover_child_issues(
     since = parent.get("created_at") or ""
     candidates = client.list_issues_by_label("research-agent", since=since)
     return [
-        c["number"] for c in candidates
-        if c.get("number") != parent.get("number")
-        and not c.get("pull_request")
+        c["number"]
+        for c in candidates
+        if c.get("number") != parent.get("number") and not c.get("pull_request")
     ][:10]
 
 
@@ -615,8 +624,9 @@ def write_artifacts(graph: IntegrityGraph, issue_number: Optional[int]) -> Dict[
     return {"json": json_path, "markdown": md_path}
 
 
-def post_or_print(client: Optional[GitHubClient], issue_number: Optional[int],
-                   markdown: str, dry_run: bool) -> None:
+def post_or_print(
+    client: Optional[GitHubClient], issue_number: Optional[int], markdown: str, dry_run: bool
+) -> None:
     if dry_run or client is None or not client.enabled or not issue_number:
         print(markdown)
         return
@@ -627,8 +637,7 @@ def post_or_print(client: Optional[GitHubClient], issue_number: Optional[int],
         print(markdown)
 
 
-def label_issue(client: Optional[GitHubClient], issue: Dict[str, Any],
-                 status: str) -> None:
+def label_issue(client: Optional[GitHubClient], issue: Dict[str, Any], status: str) -> None:
     """Update the parent issue's labels with an ``integrity-<status>`` tag."""
     if client is None or not client.enabled:
         return
@@ -638,7 +647,7 @@ def label_issue(client: Optional[GitHubClient], issue: Dict[str, Any],
         if (lab.get("name") if isinstance(lab, dict) else str(lab))
         and not (lab.get("name") if isinstance(lab, dict) else str(lab)).startswith("integrity-")
     ]
-    new_labels = sorted(set(existing + [f"integrity-{status}"]))
+    new_labels = sorted({*existing, f"integrity-{status}"})
     client.update_labels(issue["number"], new_labels)
 
 
@@ -651,8 +660,8 @@ def _parse_int_list(value: str) -> List[int]:
     if not value:
         return []
     out: List[int] = []
-    for part in value.split(","):
-        part = part.strip()
+    for raw in value.split(","):
+        part = raw.strip()
         if not part:
             continue
         try:
@@ -672,42 +681,66 @@ def _exit_code_for(status: str) -> int:
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--issue", type=int, default=None,
-                        help="Parent tracking issue number")
-    parser.add_argument("--child-issues", type=str, default="",
-                        help="Comma-separated list of child issue numbers")
-    parser.add_argument("--report", type=str, default=None,
-                        help="Path to a research_report.json (offline mode)")
-    parser.add_argument("--repo", type=str,
-                        default=os.environ.get("GITHUB_REPOSITORY", ""),
-                        help="owner/repo (defaults to $GITHUB_REPOSITORY)")
-    parser.add_argument("--no-llm", action="store_true",
-                        help="Disable the AI-QC LLM call (use heuristic only)")
-    parser.add_argument("--no-network", action="store_true",
-                        help="Skip MorphoSource and CrossRef API calls")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Print the integrity report instead of posting it")
-    parser.add_argument("--out-json", type=str, default=None,
-                        help="Override output JSON path")
-    parser.add_argument("--max-media", type=int, default=10,
-                        help="Maximum distinct media IDs to inspect (default: 10)")
-    parser.add_argument("--api-timeout", type=float,
-                        default=float(os.environ.get("VERIFIER_API_TIMEOUT", "10")),
-                        help="Per-call MorphoSource timeout in seconds (default: 10)")
-    parser.add_argument("--api-retries", type=int,
-                        default=int(os.environ.get("VERIFIER_API_RETRIES", "1")),
-                        help="Per-call MorphoSource retry count (default: 1)")
-    parser.add_argument("--api-min-delay", type=float,
-                        default=float(os.environ.get("VERIFIER_API_MIN_DELAY", "0.5")),
-                        help="Minimum seconds between MorphoSource calls (default: 0.5)")
-    parser.add_argument("--circuit-breaker", type=int,
-                        default=int(os.environ.get("VERIFIER_CIRCUIT_BREAKER", "3")),
-                        help="Open the circuit after N consecutive failures (default: 3)")
-    parser.add_argument("--cache-ttl-days", type=int,
-                        default=int(os.environ.get("VERIFIER_CACHE_TTL_DAYS", "7")),
-                        help="Disk-cache TTL in days (default: 7; 0 disables TTL)")
-    parser.add_argument("--no-cache", action="store_true",
-                        help="Disable the on-disk record cache")
+    parser.add_argument("--issue", type=int, default=None, help="Parent tracking issue number")
+    parser.add_argument(
+        "--child-issues", type=str, default="", help="Comma-separated list of child issue numbers"
+    )
+    parser.add_argument(
+        "--report", type=str, default=None, help="Path to a research_report.json (offline mode)"
+    )
+    parser.add_argument(
+        "--repo",
+        type=str,
+        default=os.environ.get("GITHUB_REPOSITORY", ""),
+        help="owner/repo (defaults to $GITHUB_REPOSITORY)",
+    )
+    parser.add_argument(
+        "--no-llm", action="store_true", help="Disable the AI-QC LLM call (use heuristic only)"
+    )
+    parser.add_argument(
+        "--no-network", action="store_true", help="Skip MorphoSource and CrossRef API calls"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print the integrity report instead of posting it"
+    )
+    parser.add_argument("--out-json", type=str, default=None, help="Override output JSON path")
+    parser.add_argument(
+        "--max-media",
+        type=int,
+        default=10,
+        help="Maximum distinct media IDs to inspect (default: 10)",
+    )
+    parser.add_argument(
+        "--api-timeout",
+        type=float,
+        default=float(os.environ.get("VERIFIER_API_TIMEOUT", "10")),
+        help="Per-call MorphoSource timeout in seconds (default: 10)",
+    )
+    parser.add_argument(
+        "--api-retries",
+        type=int,
+        default=int(os.environ.get("VERIFIER_API_RETRIES", "1")),
+        help="Per-call MorphoSource retry count (default: 1)",
+    )
+    parser.add_argument(
+        "--api-min-delay",
+        type=float,
+        default=float(os.environ.get("VERIFIER_API_MIN_DELAY", "0.5")),
+        help="Minimum seconds between MorphoSource calls (default: 0.5)",
+    )
+    parser.add_argument(
+        "--circuit-breaker",
+        type=int,
+        default=int(os.environ.get("VERIFIER_CIRCUIT_BREAKER", "3")),
+        help="Open the circuit after N consecutive failures (default: 3)",
+    )
+    parser.add_argument(
+        "--cache-ttl-days",
+        type=int,
+        default=int(os.environ.get("VERIFIER_CACHE_TTL_DAYS", "7")),
+        help="Disk-cache TTL in days (default: 7; 0 disables TTL)",
+    )
+    parser.add_argument("--no-cache", action="store_true", help="Disable the on-disk record cache")
     args = parser.parse_args(argv)
 
     token = os.environ.get("GITHUB_TOKEN", "")
@@ -754,8 +787,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     # GitHubClient bound above, which would break post_or_print().
     cache: Optional[RecordCache]
     if args.no_network:
-        cache = RecordCache(cache_dir=None, fetcher=None,
-                             min_delay_s=0.0, circuit_breaker_threshold=0)
+        cache = RecordCache(
+            cache_dir=None, fetcher=None, min_delay_s=0.0, circuit_breaker_threshold=0
+        )
     else:
         ms_client = build_polite_client(
             timeout_s=args.api_timeout,
@@ -769,24 +803,32 @@ def main(argv: Optional[List[str]] = None) -> int:
             min_delay_s=args.api_min_delay,
             circuit_breaker_threshold=args.circuit_breaker,
         )
-        log.info("Verifier client: timeout=%.1fs retries=%d min-delay=%.2fs "
-                 "breaker=%d cache-dir=%s",
-                 args.api_timeout, args.api_retries, args.api_min_delay,
-                 args.circuit_breaker, cache_dir or "(disabled)")
+        log.info(
+            "Verifier client: timeout=%.1fs retries=%d min-delay=%.2fs " "breaker=%d cache-dir=%s",
+            args.api_timeout,
+            args.api_retries,
+            args.api_min_delay,
+            args.circuit_breaker,
+            cache_dir or "(disabled)",
+        )
 
     graph = build_graph(
-        issue, comments, child_pairs,
+        issue,
+        comments,
+        child_pairs,
         use_llm=not args.no_llm,
         allow_network=not args.no_network,
         cache=cache,
         max_media=args.max_media,
     )
     decision = graph.release_decision()
-    log.info("Integrity status: %s | scientific=%.2f | training=%.2f | commercial=%.2f",
-             decision["status"],
-             decision["scientific_validity"],
-             decision["ai_training_validity"],
-             decision["commercial_release_validity"])
+    log.info(
+        "Integrity status: %s | scientific=%.2f | training=%.2f | commercial=%.2f",
+        decision["status"],
+        decision["scientific_validity"],
+        decision["ai_training_validity"],
+        decision["commercial_release_validity"],
+    )
     if cache:
         log.info("Cache: %s", cache.stats.summary())
         if cache.stats.circuit_open:
@@ -808,8 +850,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         log.info("Also wrote %s", args.out_json)
 
     markdown = graph.to_markdown()
-    if cache and (cache.stats.network_calls or cache.stats.disk_hits
-                   or cache.stats.skipped_after_breaker):
+    if cache and (
+        cache.stats.network_calls or cache.stats.disk_hits or cache.stats.skipped_after_breaker
+    ):
         breaker_note = ""
         if cache.stats.circuit_open:
             breaker_note = (
@@ -850,8 +893,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     return _exit_code_for(decision["status"])
 
 
-def _synthesize_issue_from_report(report_path: Path
-                                   ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+def _synthesize_issue_from_report(report_path: Path) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Build a fake issue + comment list from a local research_report.json.
 
     Used when running the verifier offline (no GitHub token).  This lets

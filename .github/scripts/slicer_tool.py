@@ -36,6 +36,13 @@ log = logging.getLogger("SlicerTool")
 
 DATA_DIR = AUTORESEARCHCLAW_HOME / "specimens"
 
+# nnInteractive runs in its own venv (set up by install_nninteractive.sh)
+# because it needs a different PyTorch build than the rest of AutoResearchClaw.
+NNI_HOME = Path(os.environ.get(
+    "NNINTERACTIVE_HOME", str(AUTORESEARCHCLAW_HOME / "nninteractive")
+))
+NNI_PYTHON = NNI_HOME / "bin" / "python"
+
 _do_load_dotenv()
 
 
@@ -336,12 +343,112 @@ def _run_monai_segmentation(media_id: str, input_path: str, model_id: str = "") 
 
 
 # ---------------------------------------------------------------------------
+# Step 2c: Run nnInteractive iterative segmentation (LLM "paint" loop)
+# ---------------------------------------------------------------------------
+
+
+def _run_nninteractive_loop(media_id: str, input_path: str, goal: str,
+                             max_steps: int = 12,
+                             vision_model: str = "") -> dict:
+    """Run the LLM-in-the-loop nnInteractive segmentation in its own venv.
+
+    The nnInteractive backend ships with PyTorch and a 400MB model checkpoint,
+    so it lives in its own virtualenv at ``NNI_HOME``. We invoke
+    ``nninteractive_loop.py`` as a subprocess using that venv's Python.
+
+    Args:
+        media_id: MorphoSource media identifier
+        input_path: Path to a 3D volume (NIfTI / NRRD)
+        goal: Natural-language goal for the segmentation
+              (e.g. "Segment the cranial cavity")
+        max_steps: Max LLM-driven prompt iterations
+        vision_model: Override OpenAI vision model
+
+    Returns:
+        Dict containing the loop's JSON result, or {"error": ...}
+    """
+    output_dir = DATA_DIR / f"media_{media_id}" / "nninteractive"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if not NNI_PYTHON.exists():
+        return {
+            "error": (
+                "nnInteractive venv not found at "
+                f"{NNI_PYTHON}. Bootstrap it once with "
+                "`.github/scripts/install_nninteractive.sh`."
+            ),
+            "media_id": media_id,
+        }
+
+    from _helpers import SCRIPT_DIR
+    loop_script = SCRIPT_DIR / "nninteractive_loop.py"
+    if not loop_script.exists():
+        return {"error": f"nninteractive_loop.py not found at {loop_script}"}
+
+    cmd = [
+        str(NNI_PYTHON),
+        str(loop_script),
+        "--input", str(input_path),
+        "--goal", goal,
+        "--media-id", media_id,
+        "--output-dir", str(output_dir),
+        "--max-steps", str(max_steps),
+    ]
+    if vision_model:
+        cmd += ["--vision-model", vision_model]
+
+    env = os.environ.copy()
+    env.setdefault("NNINTERACTIVE_HOME", str(NNI_HOME))
+
+    log.info("Running nnInteractive paint loop (goal=%s, max_steps=%d)",
+             goal, max_steps)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=3600, env=env)
+    except subprocess.TimeoutExpired:
+        return {"error": "nnInteractive loop timed out (1h)", "media_id": media_id}
+    except Exception as exc:
+        return {"error": f"Subprocess failed: {exc}", "media_id": media_id}
+
+    log.info("nnInteractive exit code: %d", proc.returncode)
+    if proc.stdout:
+        for line in proc.stdout.strip().split("\n")[-10:]:
+            log.info("  NNI: %s", line)
+    if proc.returncode != 0 and proc.stderr:
+        log.warning("NNI stderr: %s", proc.stderr[-500:])
+
+    # The script prints its result JSON on stdout (last block) and also writes
+    # a summary file alongside the labelmap.
+    summary_file = output_dir / f"{media_id}_nni_summary.json"
+    if summary_file.exists():
+        try:
+            return json.loads(summary_file.read_text())
+        except json.JSONDecodeError as exc:
+            log.warning("Could not parse nni summary: %s", exc)
+    # Try parsing stdout JSON as a fallback
+    if proc.stdout:
+        try:
+            json_start = proc.stdout.rfind("{\n")
+            json_end = proc.stdout.rfind("}")
+            if 0 <= json_start < json_end:
+                return json.loads(proc.stdout[json_start : json_end + 1])
+        except json.JSONDecodeError:
+            pass
+    return {
+        "error": "No nnInteractive output produced",
+        "stdout_tail": (proc.stdout or "")[-500:],
+        "stderr_tail": (proc.stderr or "")[-500:],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Step 3: Generate summary for AutoResearchClaw memory
 # ---------------------------------------------------------------------------
 
 
 def _build_summary(media_id: str, download_result: dict, analysis: dict,
-                    monai_result: dict | None = None) -> str:
+                    monai_result: dict | None = None,
+                    nni_result: dict | None = None) -> str:
     """Build a concise summary string for the research agent's memory."""
     if analysis.get("error"):
         return f"Specimen {media_id}: download={'OK' if download_result.get('success') else 'FAILED'}, analysis FAILED ({analysis['error']})"
@@ -391,6 +498,19 @@ def _build_summary(media_id: str, download_result: dict, analysis: dict,
     elif monai_result and monai_result.get("error"):
         lines.append(f"\n### MONAI: FAILED ({monai_result['error']})")
 
+    # nnInteractive iterative segmentation results
+    if nni_result and not nni_result.get("error"):
+        lines.append("")
+        lines.append("### nnInteractive Iterative Segmentation")
+        lines.append(f"**Goal:** {nni_result.get('goal', 'N/A')}")
+        lines.append(f"**Steps:** {nni_result.get('steps', nni_result.get('n_prompts', 0))}")
+        lines.append(f"**Voxels:** {nni_result.get('voxel_count', 0):,}")
+        lines.append(f"**Volume:** {nni_result.get('volume_mm3', 0):.2f} mm³")
+        if nni_result.get("labelmap_path"):
+            lines.append(f"**Labelmap:** `{nni_result['labelmap_path']}`")
+    elif nni_result and nni_result.get("error"):
+        lines.append(f"\n### nnInteractive: FAILED ({nni_result['error']})")
+
     return "\n".join(lines)
 
 
@@ -401,11 +521,15 @@ def _build_summary(media_id: str, download_result: dict, analysis: dict,
 
 def analyze_specimen(media_id: str, topic: str = "", skip_download: bool = False,
                      monai: bool = False, monai_model: str = "",
-                     monai_input: str = "") -> dict:
+                     monai_input: str = "",
+                     nninteractive: bool = False,
+                     nninteractive_goal: str = "",
+                     nninteractive_max_steps: int = 12,
+                     nninteractive_input: str = "") -> dict:
     """Download and analyze a MorphoSource specimen.
 
     Returns a dict with: success, media_id, summary, analysis, download_result,
-    and optionally monai_result.
+    and optionally monai_result and/or nni_result.
 
     Args:
         media_id: MorphoSource media identifier
@@ -416,10 +540,19 @@ def analyze_specimen(media_id: str, topic: str = "", skip_download: bool = False
                      Empty string auto-detects the best model.
         monai_input: Path to CT volume for MONAI. If empty, searches
                      the downloaded specimen directory for NIfTI/NRRD files.
+        nninteractive: If True, run the LLM-driven nnInteractive paint loop
+                     to iteratively segment a target structure.
+        nninteractive_goal: Natural-language goal for the nnInteractive loop
+                     (e.g. "Segment the cranial cavity"). Required when
+                     nninteractive=True.
+        nninteractive_max_steps: Max LLM iterations for the paint loop.
+        nninteractive_input: Path to volume for nnInteractive. Auto-detected
+                     from the specimen directory if empty.
     """
     t0 = time.time()
     log.info("=" * 50)
-    log.info("SlicerTool: analyzing media %s (monai=%s)", media_id, monai)
+    log.info("SlicerTool: analyzing media %s (monai=%s, nninteractive=%s)",
+             media_id, monai, nninteractive)
     log.info("=" * 50)
 
     # Check if Slicer is available
@@ -434,20 +567,27 @@ def analyze_specimen(media_id: str, topic: str = "", skip_download: bool = False
     specimen_dir = DATA_DIR / f"media_{media_id}"
     existing_analysis = specimen_dir / "analysis" / "analysis.json"
     monai_result = None
+    nni_result = None
 
-    if existing_analysis.exists() and not monai:
+    # Cache short-circuit only applies when no segmentation is requested.
+    if existing_analysis.exists() and not monai and not nninteractive:
         log.info("CACHE HIT: reusing analysis for %s", media_id)
         analysis = json.loads(existing_analysis.read_text())
 
         existing_monai = specimen_dir / "monai_seg" / "monai_seg.json"
         if existing_monai.exists():
             monai_result = json.loads(existing_monai.read_text())
+        existing_nni = specimen_dir / "nninteractive" / f"{media_id}_nni_summary.json"
+        if existing_nni.exists():
+            nni_result = json.loads(existing_nni.read_text())
 
-        summary = _build_summary(media_id, {"success": True}, analysis, monai_result)
+        summary = _build_summary(media_id, {"success": True}, analysis,
+                                 monai_result, nni_result)
         return {
             "success": True, "media_id": media_id,
             "summary": summary, "analysis": analysis,
             "monai_result": monai_result,
+            "nni_result": nni_result,
             "download_result": {"success": True, "cached": True},
             "duration_s": round(time.time() - t0, 1),
         }
@@ -491,8 +631,27 @@ def analyze_specimen(media_id: str, topic: str = "", skip_download: bool = False
             log.warning("No CT volume found for MONAI segmentation")
             monai_result = {"error": "No CT volume (NIfTI/NRRD/DICOM) found in specimen"}
 
+    # Step 2c: nnInteractive iterative segmentation (if requested)
+    if nninteractive:
+        if not nninteractive_goal:
+            nni_result = {"error": "nninteractive_goal is required when nninteractive=True"}
+        else:
+            ct_path = nninteractive_input or _find_ct_volume(specimen_dir)
+            if ct_path:
+                log.info("Running nnInteractive paint loop on %s", ct_path)
+                nni_result = _run_nninteractive_loop(
+                    media_id, ct_path, nninteractive_goal,
+                    max_steps=nninteractive_max_steps,
+                )
+            else:
+                log.warning("No CT volume found for nnInteractive segmentation")
+                nni_result = {
+                    "error": "No CT volume (NIfTI/NRRD/DICOM) found in specimen"
+                }
+
     # Step 3: Build summary
-    summary = _build_summary(media_id, download_result, analysis, monai_result)
+    summary = _build_summary(media_id, download_result, analysis,
+                             monai_result, nni_result)
 
     duration = round(time.time() - t0, 1)
     log.info("SlicerTool complete in %.1fs", duration)
@@ -503,6 +662,7 @@ def analyze_specimen(media_id: str, topic: str = "", skip_download: bool = False
         "summary": summary,
         "analysis": analysis,
         "monai_result": monai_result,
+        "nni_result": nni_result,
         "download_result": download_result,
         "duration_s": duration,
     }
@@ -559,7 +719,8 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-    parser = argparse.ArgumentParser(description="SlicerMorph + MONAI analysis tool")
+    parser = argparse.ArgumentParser(
+        description="SlicerMorph + MONAI + nnInteractive analysis tool")
     parser.add_argument("media_id", nargs="?", default=os.environ.get("MEDIA_ID", ""),
                         help="MorphoSource media ID")
     parser.add_argument("--topic", default="", help="Research topic context")
@@ -571,6 +732,16 @@ if __name__ == "__main__":
                         help="Path to CT volume for MONAI (auto-detected if omitted)")
     parser.add_argument("--monai-only", default="",
                         help="Run standalone MONAI segmentation on this file (no MorphoSource)")
+    parser.add_argument("--nninteractive", action="store_true",
+                        help="Run iterative nnInteractive 'paint' segmentation loop")
+    parser.add_argument("--nni-goal", default="",
+                        help="Goal for the nnInteractive loop, e.g. 'Segment the cranial cavity'")
+    parser.add_argument("--nni-input", default="",
+                        help="Path to volume for nnInteractive (auto-detected if omitted)")
+    parser.add_argument("--nni-max-steps", type=int, default=12,
+                        help="Maximum LLM iterations for the nnInteractive loop")
+    parser.add_argument("--nni-only", default="",
+                        help="Run standalone nnInteractive loop on this volume (no MorphoSource)")
     args = parser.parse_args()
 
     if args.monai_only:
@@ -585,16 +756,43 @@ if __name__ == "__main__":
         print(json.dumps(result, indent=2, default=str))
         sys.exit(0 if not result.get("error") else 1)
 
+    if args.nni_only:
+        if not args.nni_goal:
+            print("--nni-goal is required when using --nni-only")
+            sys.exit(2)
+        result = _run_nninteractive_loop(
+            media_id="standalone",
+            input_path=args.nni_only,
+            goal=args.nni_goal,
+            max_steps=args.nni_max_steps,
+        )
+        print("\n" + "=" * 60)
+        if result.get("error"):
+            print(f"nnInteractive FAILED: {result['error']}")
+        else:
+            print(f"nnInteractive: {result.get('voxel_count', 0):,} voxels, "
+                  f"{result.get('volume_mm3', 0):.2f} mm³")
+        print("=" * 60)
+        print(json.dumps(result, indent=2, default=str))
+        sys.exit(0 if not result.get("error") else 1)
+
     if not args.media_id:
         parser.print_help()
         sys.exit(1)
 
-    result = analyze_specimen(args.media_id, args.topic,
-                              monai=args.monai,
-                              monai_model=args.monai_model,
-                              monai_input=args.monai_input)
+    result = analyze_specimen(
+        args.media_id, args.topic,
+        monai=args.monai,
+        monai_model=args.monai_model,
+        monai_input=args.monai_input,
+        nninteractive=args.nninteractive,
+        nninteractive_goal=args.nni_goal,
+        nninteractive_input=args.nni_input,
+        nninteractive_max_steps=args.nni_max_steps,
+    )
     print("\n" + "=" * 60)
     print(result.get("summary", "No summary"))
     print("=" * 60)
     print(json.dumps({k: v for k, v in result.items()
-                      if k not in ("analysis", "monai_result")}, indent=2))
+                      if k not in ("analysis", "monai_result", "nni_result")},
+                     indent=2))

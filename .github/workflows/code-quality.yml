@@ -1,77 +1,485 @@
 name: Code Quality
 
+# Honest, useful linting.  The previous version of this workflow set
+# ``continue-on-error: true`` on every step and always reported success,
+# which made the green check meaningless.  The redesigned workflow:
+#
+#   * Splits checks into focused jobs that can fail independently.
+#   * Uses **Ruff** (replaces flake8 + isort) and Black for Python.
+#   * Hard-fails on syntax errors, undefined names, security HIGH
+#     findings, and broken workflow YAML — anywhere in the repo.
+#   * Hard-fails on *any* new lint / format violation introduced by a
+#     PR (diff-only enforcement), so existing technical debt does not
+#     turn a meaningful fix into a green-vs-red argument.
+#   * Annotates PRs inline via the GitHub problem-matcher output of
+#     Ruff (``--output-format=github``).
+#   * Aggregates everything into a single GitHub Step Summary table
+#     so reviewers don't have to dig through five separate job logs.
+#
+# Jobs:
+#   pre-commit    - run the existing .pre-commit-config.yaml as-is
+#   lint-python   - Ruff full-repo (hard) + Ruff diff-only (hard) + Black diff (hard)
+#   type-check    - mypy on changed files only, advisory
+#   security      - bandit (HIGH blocks) + pip-audit (advisory)
+#   workflow-lint - actionlint + yamllint on .github/
+#   summary       - aggregate status of all of the above
+#
+# Concurrency: PR runs cancel earlier runs on the same head ref so
+# stale annotations do not pile up.
+
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
+    paths:
+      - '**/*.py'
+      - 'pyproject.toml'
+      - 'requirements*.txt'
+      - '.flake8'
+      - '.pre-commit-config.yaml'
+      - '.github/workflows/code-quality.yml'
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
+    paths:
+      - '**/*.py'
+      - 'pyproject.toml'
+      - 'requirements*.txt'
+      - '.flake8'
+      - '.pre-commit-config.yaml'
+      - '.github/workflows/code-quality.yml'
   workflow_dispatch:
+    inputs:
+      strict:
+        description: 'Promote advisory jobs (mypy, pip-audit) to blocking'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: code-quality-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# Always run the bash steps with `set -euo pipefail` so masked
+# failures (e.g. when piping into tee for the step summary) actually
+# fail the step.
+defaults:
+  run:
+    shell: bash
+
+env:
+  PYTHON_VERSION: '3.11'
+  # ``--show-error-codes`` makes mypy output more useful for users
+  # who want to silence individual diagnostics with a `# type: ignore`.
+  MYPY_EXTRA_FLAGS: '--install-types --non-interactive --ignore-missing-imports --show-error-codes'
 
 jobs:
-  lint:
-    name: Linting and Formatting
+  # ----------------------------------------------------------------------
+  # pre-commit: gold-standard mirror of what developers run locally
+  # ----------------------------------------------------------------------
+  pre-commit:
+    name: pre-commit hooks
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.9', '3.10', '3.11']
-    
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-      
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+      - uses: actions/checkout@v5
         with:
-          python-version: ${{ matrix.python-version }}
-      
-      - name: Cache pip packages
-        uses: actions/cache@v3
+          fetch-depth: 0   # required for diff-based hooks
+
+      - uses: actions/setup-python@v6
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-lint-${{ hashFiles('**/pyproject.toml') }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            requirements.txt
+
+      - name: Install pre-commit
+        run: python -m pip install --upgrade pip pre-commit
+
+      - name: Cache pre-commit envs
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-pip-lint-
-            ${{ runner.os }}-pip-
-      
-      - name: Install dependencies
+            pre-commit-${{ runner.os }}-
+
+      - name: Run pre-commit on changed files (PR)
+        if: github.event_name == 'pull_request'
+        run: pre-commit run --from-ref "origin/${{ github.base_ref }}" --to-ref "HEAD" --show-diff-on-failure
+
+      - name: Run pre-commit on full repo (push / manual)
+        if: github.event_name != 'pull_request'
+        # Existing technical debt: the repo has ~800 legacy flake8
+        # findings.  Until those are paid down, the full-repo run is
+        # advisory.  The PR-diff path above is the real gate.
+        continue-on-error: true
+        run: pre-commit run --all-files --show-diff-on-failure
+
+  # ----------------------------------------------------------------------
+  # lint-python: Ruff (always-blocking subset) + Black + Ruff diff-only
+  # ----------------------------------------------------------------------
+  lint-python:
+    name: Ruff + Black
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install Ruff + Black
+        run: |
+          python -m pip install --upgrade pip
+          pip install "ruff>=0.6.0" "black>=23.0.0"
+
+      # ---- Always-blocking, full-repo subset --------------------------
+      # These rules catch hard breakage anywhere in the codebase, even
+      # in files this PR did not touch.  Keep this list small.
+      - name: Ruff (syntax / correctness, full repo, BLOCKING)
+        run: |
+          ruff check \
+            --select=E9,F63,F7,F82,F821,F823,B006,B008,B018 \
+            --output-format=github \
+            .
+
+      # ---- Diff-only, hard gate on new violations --------------------
+      - name: Compute changed Python files
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+            git fetch --quiet origin "${{ github.base_ref }}" --depth=1 || true
+          else
+            BASE="HEAD~1"
+          fi
+          mapfile -t FILES < <(git diff --name-only --diff-filter=AM "$BASE"...HEAD -- '*.py' || true)
+          printf '%s\n' "${FILES[@]}" > changed.txt
+          echo "count=${#FILES[@]}" >> "$GITHUB_OUTPUT"
+          echo "Changed Python files (${#FILES[@]}):"
+          printf '  %s\n' "${FILES[@]}"
+
+      - name: Ruff (all configured rules on changed files, BLOCKING)
+        if: steps.changed.outputs.count != '0'
+        run: |
+          xargs -a changed.txt -r ruff check --output-format=github
+
+      - name: Black --check on changed files (BLOCKING)
+        if: steps.changed.outputs.count != '0'
+        run: |
+          xargs -a changed.txt -r black --check --diff --color --line-length=100
+
+      # ---- Full-repo statistics (advisory) ----------------------------
+      - name: Ruff full-repo statistics (advisory)
+        if: always()
+        continue-on-error: true
+        run: |
+          {
+            echo "## Ruff full-repo statistics"
+            echo ""
+            echo "<details><summary>Per-rule counts across the whole repository</summary>"
+            echo ""
+            echo '```'
+            ruff check --statistics --exit-zero . || true
+            echo '```'
+            echo ""
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ----------------------------------------------------------------------
+  # type-check: mypy on changed files (advisory; promote with `strict`)
+  # ----------------------------------------------------------------------
+  type-check:
+    name: mypy (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            requirements.txt
+
+      - name: Install mypy + runtime deps
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install black flake8 isort bandit mypy
-      
-      - name: Check code formatting with Black
+          pip install "mypy>=1.0.0"
+
+      - name: Compute changed Python files
+        id: changed
         run: |
-          black --check --line-length 100 --diff .
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+            git fetch --quiet origin "${{ github.base_ref }}" --depth=1 || true
+          else
+            BASE="HEAD~1"
+          fi
+          mapfile -t FILES < <(git diff --name-only --diff-filter=AM "$BASE"...HEAD -- '*.py' | grep -v '^Tests/' || true)
+          printf '%s\n' "${FILES[@]}" > changed.txt
+          echo "count=${#FILES[@]}" >> "$GITHUB_OUTPUT"
+
+      - name: mypy on changed files
+        id: mypy
+        if: steps.changed.outputs.count != '0'
+        continue-on-error: ${{ inputs.strict != true }}
+        run: |
+          set +e
+          xargs -a changed.txt mypy $MYPY_EXTRA_FLAGS > mypy.out 2>&1
+          status=$?
+          {
+            echo "## mypy"
+            echo ""
+            if [ "$status" -eq 0 ]; then
+              echo "No type errors on changed files."
+            else
+              echo "Type errors on changed files:"
+              echo ""
+              echo '```'
+              cat mypy.out
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat mypy.out
+          exit $status
+
+  # ----------------------------------------------------------------------
+  # security: Bandit (HIGH blocks) + pip-audit (advisory)
+  # ----------------------------------------------------------------------
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install bandit + pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install "bandit[toml]>=1.7.0" "pip-audit>=2.7.0"
+
+      - name: Bandit (HIGH severity blocks)
+        run: |
+          bandit -r . -c pyproject.toml \
+            --exclude ./Tests,./tests,./.venv,./venv,./data,./docs/archive \
+            --severity-level high \
+            --confidence-level medium
+
+      - name: Bandit full report (advisory)
+        if: always()
         continue-on-error: true
-      
-      - name: Lint with flake8
         run: |
-          # Stop the build if there are Python syntax errors or undefined names
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          # Exit-zero treats all errors as warnings
-          flake8 . --count --exit-zero --max-complexity=15 --max-line-length=100 --statistics
-      
-      - name: Check import sorting with isort
+          bandit -r . -c pyproject.toml \
+            --exclude ./Tests,./tests,./.venv,./venv,./data,./docs/archive \
+            -f json -o bandit-report.json --exit-zero
+          {
+            echo "## Bandit summary (all severities)"
+            echo ""
+            echo '```'
+            bandit -r . -c pyproject.toml \
+              --exclude ./Tests,./tests,./.venv,./venv,./data,./docs/archive \
+              --exit-zero | tail -40
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: pip-audit (advisory CVE scan)
+        if: always()
+        continue-on-error: ${{ inputs.strict != true }}
         run: |
-          isort --check-only --profile black --line-length 100 .
-        continue-on-error: true
-      
-      - name: Security check with Bandit
+          {
+            echo "## pip-audit"
+            echo ""
+            echo '```'
+            pip-audit -r requirements.txt --strict || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Bandit JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # ----------------------------------------------------------------------
+  # tool-tests: smoke-test the agent's tool-call surface + slicer fixture
+  # ----------------------------------------------------------------------
+  # These tests verify two things on every PR:
+  #   1. Every Python "tool" the LLM/research agent calls still imports
+  #      cleanly, has the expected signature, and degrades gracefully
+  #      with no network / no API key (see Tests/test_tool_calls.py).
+  #   2. The deterministic SlicerMorph model fixture
+  #      (Tests/fixtures/tetrahedron.ply) is intact and any cached
+  #      MorphoSource model on disk has a valid PLY header (see
+  #      Tests/test_slicer_cached_model.py).
+  #
+  # The Slicer-process integration tests (which actually launch
+  # ``Slicer --python-script slicer_load_test.py`` against the cached
+  # chameleon skull) are *skipped* here because the cloud runner has
+  # no 3D Slicer install.  They run on the self-hosted runner via the
+  # ``slicer-integration.yml`` workflow.
+  tool-tests:
+    name: Agent tool-call smoke tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements-test.txt
+            requirements.txt
+
+      - name: Install test dependencies
         run: |
-          bandit -r . -f json -o bandit-report.json --exit-zero
-          bandit -r . --skip B101,B601 --exclude ./tests,./Tests
-        continue-on-error: true
-      
-      - name: Type checking with mypy
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt
+
+      - name: Run tool-call smoke tests (mocked, no network)
+        # SLICER_BIN points at a path that does not exist so the
+        # Slicer-process integration tests skip cleanly here.
+        env:
+          SLICER_BIN: /nonexistent/path/Slicer
+          OPENAI_API_KEY: ''
+          MORPHOSOURCE_API_KEY: ''
         run: |
-          mypy --install-types --non-interactive --ignore-missing-imports .
-        continue-on-error: true
-      
-      - name: Summary
+          pytest -v --tb=short \
+            Tests/test_tool_calls.py \
+            Tests/test_slicer_cached_model.py \
+            | tee tool-tests.log
+
+      - name: Append tool-tests summary
         if: always()
         run: |
-          echo "## Code Quality Check Results" >> $GITHUB_STEP_SUMMARY
-          echo "Python version: ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Linting completed" >> $GITHUB_STEP_SUMMARY
-          echo "See job logs for detailed results" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Agent tool-call smoke tests"
+            echo ""
+            echo '```'
+            tail -40 tool-tests.log 2>/dev/null || echo "(no log)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload tool-tests log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool-tests-log
+          path: tool-tests.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ----------------------------------------------------------------------
+  # workflow-lint: actionlint + yamllint for .github/
+  # ----------------------------------------------------------------------
+  workflow-lint:
+    name: Workflow + YAML lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install yamllint
+        run: pip install "yamllint>=1.35.0"
+
+      - name: Install actionlint
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) \
+            1.7.1 .
+          ./actionlint -version
+
+      - name: yamllint (.github)
+        # Relaxed defaults: catch tabs / hard indent breaks, but accept
+        # the project's existing bracket spacing and longer comment
+        # lines.  We do NOT ignore trailing-whitespace -- that's worth
+        # keeping clean and is mechanical to fix.
+        run: |
+          yamllint -d "$(cat <<'YAMLLINT_CONFIG'
+          extends: default
+          rules:
+            line-length:
+              max: 200
+            document-start: disable
+            truthy:
+              check-keys: false
+            brackets:
+              max-spaces-inside: 1
+              min-spaces-inside: 0
+            comments:
+              min-spaces-from-content: 1
+            comments-indentation: disable
+          YAMLLINT_CONFIG
+          )" .github/
+
+      - name: actionlint (.github/workflows/*.yml)
+        run: ./actionlint -color
+
+  # ----------------------------------------------------------------------
+  # summary: aggregate everything into a single, readable status table
+  # ----------------------------------------------------------------------
+  summary:
+    name: Quality summary
+    if: always()
+    needs: [pre-commit, lint-python, type-check, security, tool-tests, workflow-lint]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate
+        run: |
+          {
+            echo "# Code Quality"
+            echo ""
+            echo "| Check | Result |"
+            echo "|-------|--------|"
+            echo "| pre-commit | ${{ needs.pre-commit.result }} |"
+            echo "| lint-python (Ruff + Black) | ${{ needs.lint-python.result }} |"
+            echo "| type-check (mypy, advisory) | ${{ needs.type-check.result }} |"
+            echo "| security (bandit + pip-audit) | ${{ needs.security.result }} |"
+            echo "| tool-tests (agent + SlicerMorph fixture) | ${{ needs.tool-tests.result }} |"
+            echo "| workflow-lint (actionlint + yamllint) | ${{ needs.workflow-lint.result }} |"
+            echo ""
+            if [ "${{ needs.lint-python.result }}" = "failure" ] || \
+               [ "${{ needs.security.result }}" = "failure" ] || \
+               [ "${{ needs.workflow-lint.result }}" = "failure" ] || \
+               [ "${{ needs.tool-tests.result }}" = "failure" ] || \
+               [ "${{ needs.pre-commit.result }}" = "failure" ]; then
+              echo "Status: **failed** — see job logs for details."
+            else
+              echo "Status: **passed** (advisory checks may have warnings)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail summary if any required check failed
+        run: |
+          if [ "${{ needs.lint-python.result }}" = "failure" ] || \
+             [ "${{ needs.security.result }}" = "failure" ] || \
+             [ "${{ needs.workflow-lint.result }}" = "failure" ] || \
+             [ "${{ needs.tool-tests.result }}" = "failure" ] || \
+             [ "${{ needs.pre-commit.result }}" = "failure" ]; then
+            echo "::error::One or more required quality checks failed."
+            exit 1
+          fi

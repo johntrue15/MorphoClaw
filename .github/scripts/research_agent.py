@@ -729,11 +729,32 @@ def _should_analyze_specimen(cycle, total_depth, memory, candidates):
 
 
 def _run_specimen_analysis(media_id, topic):
-    """Call the SlicerTool to download and analyze a specimen."""
+    """Call the SlicerTool to download and analyze a specimen.
+
+    nnInteractive iterative segmentation is opt-in via the
+    ENABLE_NNINTERACTIVE / NNINTERACTIVE_GOAL env vars (set by the
+    autoresearchclaw workflow when the user toggles enable_nninteractive).
+    """
     try:
         from slicer_tool import analyze_specimen
         log.info("SlicerTool: analyzing specimen %s", media_id)
-        result = analyze_specimen(media_id, topic)
+
+        kwargs: dict = {}
+        if os.environ.get("ENABLE_NNINTERACTIVE", "").lower() in ("1", "true", "yes"):
+            goal = os.environ.get("NNINTERACTIVE_GOAL", "").strip() \
+                or f"Segment the primary anatomical structure relevant to: {topic}"
+            try:
+                max_steps = int(os.environ.get("NNINTERACTIVE_MAX_STEPS", "12"))
+            except ValueError:
+                max_steps = 12
+            kwargs.update(
+                nninteractive=True,
+                nninteractive_goal=goal,
+                nninteractive_max_steps=max_steps,
+            )
+            log.info("nnInteractive enabled — goal=%r, max_steps=%d", goal, max_steps)
+
+        result = analyze_specimen(media_id, topic, **kwargs)
         log.info("SlicerTool result: success=%s, duration=%.1fs",
                  result.get("success"), result.get("duration_s", 0))
         return result
