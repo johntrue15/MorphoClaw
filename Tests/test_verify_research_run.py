@@ -149,3 +149,35 @@ class TestExitCodes:
     ])
     def test_exit_code_for(self, status, expected):
         assert vrr._exit_code_for(status) == expected
+
+
+class TestClientNameShadowingRegression:
+    """Regression test for the variable-name collision between
+    ``GitHubClient`` and the polite MorphoSource client.
+
+    Before the fix, ``main()`` reused ``client`` for both objects, so
+    by the time ``post_or_print()`` was called with the GitHub client,
+    it was actually holding a ``MorphoSourceClient`` (no ``.enabled``).
+    """
+
+    def test_github_client_has_enabled(self):
+        gh = vrr.GitHubClient(repo="owner/repo", token="t")
+        assert hasattr(gh, "enabled")
+        assert gh.enabled is True
+
+    def test_polite_client_does_not_collide(self):
+        ms = vrr.build_polite_client()
+        # Polite client is either None (no morphosource_client import)
+        # or a real MorphoSourceClient — never something that should
+        # pose as a GitHubClient.
+        assert not isinstance(ms, vrr.GitHubClient)
+
+    def test_post_or_print_dry_run_does_not_touch_client(self, capsys):
+        # Pass a deliberately-broken client object; dry-run must not
+        # touch it.  This is what saved us in production after the fix.
+        class BrokenClient:
+            pass
+
+        vrr.post_or_print(BrokenClient(), 123, "## report", dry_run=True)
+        captured = capsys.readouterr()
+        assert "## report" in captured.out

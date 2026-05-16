@@ -749,13 +749,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Build a verification-specific MorphoSource client (short timeout,
     # low retries) and a polite, persistent record cache.  This is what
     # keeps a single ``/verify`` run from turning into a 30-minute
-    # connection storm against the public MorphoSource API.
+    # connection storm against the public MorphoSource API.  We use a
+    # distinct variable name (``ms_client``) so it never shadows the
+    # GitHubClient bound above, which would break post_or_print().
     cache: Optional[RecordCache]
     if args.no_network:
         cache = RecordCache(cache_dir=None, fetcher=None,
                              min_delay_s=0.0, circuit_breaker_threshold=0)
     else:
-        client = build_polite_client(
+        ms_client = build_polite_client(
             timeout_s=args.api_timeout,
             max_retries=args.api_retries,
         )
@@ -763,7 +765,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         cache = RecordCache(
             cache_dir=cache_dir,
             ttl_days=args.cache_ttl_days,
-            fetcher=make_morphosource_fetcher(client),
+            fetcher=make_morphosource_fetcher(ms_client),
             min_delay_s=args.api_min_delay,
             circuit_breaker_threshold=args.circuit_breaker,
         )
