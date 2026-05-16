@@ -63,12 +63,21 @@ class TestMetadataVerifier:
         assert result.metrics["credibility"] >= 0.7
         assert result.metrics["evidence_strength"] >= 0.7
         assert result.metrics["authority_support"] >= 0.7
+        # Verifier should never make a second API call: a fully-populated
+        # record is treated as "resolved via cache".
+        assert result.evidence.get("resolved_via_cache") is True
 
     def test_empty_record_scores_low(self):
         v = MetadataVerifier(allow_network=False)
         result = v.verify(EMPTY_RECORD)
         assert result.metrics["evidence_strength"] == 0.0
         assert "missing media id" in " ".join(result.notes)
+
+    def test_bare_id_record_is_marked_unresolved(self):
+        v = MetadataVerifier(allow_network=False)
+        result = v.verify({"id": ["000123456"]})
+        assert result.evidence.get("resolved_via_cache") is False
+        assert any("bare media id" in n for n in result.notes)
 
     def test_non_dict_input_fails_safely(self):
         v = MetadataVerifier(allow_network=False)
@@ -106,7 +115,7 @@ class TestLineageVerifier:
         record = dict(SAMPLE_MEDIA_RECORD,
                       media_type=["Volumetric Image Series"],
                       media_parent_id=[""])
-        v = LineageVerifier(allow_network=False)
+        v = LineageVerifier(cache=None, allow_network=False)
         result = v.verify(record)
         assert result.metrics["credibility"] >= 0.8
 
@@ -114,15 +123,34 @@ class TestLineageVerifier:
         record = dict(SAMPLE_MEDIA_RECORD,
                       media_type=["Mesh"],
                       media_parent_id=[""])
-        v = LineageVerifier(allow_network=False)
+        v = LineageVerifier(cache=None, allow_network=False)
         result = v.verify(record)
         assert result.metrics["credibility"] <= 0.45
         assert "orphan" in " ".join(result.notes).lower()
 
     def test_derived_with_parent_id_is_okay(self):
-        v = LineageVerifier(allow_network=False)
+        v = LineageVerifier(cache=None, allow_network=False)
         result = v.verify(SAMPLE_MEDIA_RECORD)
         assert result.metrics["credibility"] >= 0.6
+
+    def test_parent_lookup_uses_cache(self):
+        """Parent fetch must go through the shared cache, not raw HTTP."""
+        from integrity_cache import RecordCache
+
+        # Fetcher that records every call, returning a fake parent record
+        calls = []
+
+        def fetcher(mid):
+            calls.append(mid)
+            return {"id": [mid], "title": ["parent"]}
+
+        cache = RecordCache(cache_dir=None, fetcher=fetcher,
+                             min_delay_s=0.0, circuit_breaker_threshold=0)
+        v = LineageVerifier(cache=cache, allow_network=True)
+        result = v.verify(SAMPLE_MEDIA_RECORD)
+        # One call to the fetcher, for the parent media id.
+        assert calls == ["000408242"]
+        assert result.evidence["parent_resolved"] is True
 
 
 class TestAIQCVerifier:

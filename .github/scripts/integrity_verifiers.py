@@ -45,20 +45,7 @@ log = logging.getLogger("IntegrityVerifiers")
 
 # Lazy imports so this module stays usable in lightweight contexts
 # (e.g. unit tests with no `requests`, no `openai`).
-_ms_client_factory = None
 _call_llm = None
-
-
-def _get_morphosource_client():
-    """Return a singleton MorphoSourceClient, lazily importing it."""
-    global _ms_client_factory
-    if _ms_client_factory is None:
-        try:
-            from morphosource_client import get_client
-            _ms_client_factory = get_client
-        except ImportError:
-            _ms_client_factory = lambda: None  # type: ignore
-    return _ms_client_factory()
 
 
 def _get_call_llm():
@@ -112,17 +99,25 @@ class MetadataVerifier:
 
     Strategy:
       * Count how many "required" identifying fields are populated.
-      * If a media id is present and we have network/API access, try
-        to re-fetch the record and confirm it still resolves.
+      * Treat the record as "resolved" if and only if it carries a real
+        ``id`` field (i.e. the upstream cache populated it from API or
+        disk).  This deliberately avoids a *second* network call per
+        media id — the verifier no longer fetches; it scores what the
+        cache already knows.
       * Penalise missing taxonomy / organisation / DOI heavily because
         they are the levers that downstream commercial-release decisions
         depend on.
+
+    The ``allow_network`` flag is kept for backward compatibility but is
+    a no-op: this verifier is now strictly offline and relies on the
+    shared :class:`integrity_cache.RecordCache` to perform any HTTP
+    work upstream.
     """
 
     name = "metadata"
 
     def __init__(self, allow_network: bool = True):
-        self.allow_network = allow_network
+        self.allow_network = allow_network  # kept for API compatibility
 
     def verify(self, record: Dict[str, Any]) -> VerifierResult:
         result = VerifierResult(verifier=self.name)
@@ -146,20 +141,14 @@ class MetadataVerifier:
         )
         has_doi = bool(re.search(r"10\.\d{4,}/", doi_text))
 
-        # Network re-resolution (optional; skipped when offline)
-        resolved = False
-        if self.allow_network and media_id:
-            client = _get_morphosource_client()
-            if client is not None:
-                try:
-                    refetch = client.get_media(media_id)
-                    resolved = (refetch.error is None and bool(refetch.data))
-                    result.evidence["resolved_via_api"] = resolved
-                    if not resolved and refetch.error:
-                        result.notes.append(f"API re-resolve failed: {refetch.error}")
-                except Exception as exc:
-                    result.notes.append(f"API re-resolve raised: {exc}")
-                    result.evidence["resolved_via_api"] = False
+        # The cache marked this record as "resolved" if there's at least
+        # one substantive field beyond the bare media id.  We no longer
+        # make a second API call here.
+        substantive_fields = [
+            f for f in present if f not in ("id",)
+        ]
+        resolved = bool(media_id) and len(substantive_fields) >= 2
+        result.evidence["resolved_via_cache"] = resolved
 
         # Score the six dimensions
         result.metrics = {
@@ -180,6 +169,8 @@ class MetadataVerifier:
             result.notes.append("missing organisation")
         if not has_doi:
             result.notes.append("no DOI in cite_as / description")
+        if media_id and not resolved:
+            result.notes.append("record is bare media id only (cache miss / network skipped)")
 
         return result
 
@@ -307,6 +298,19 @@ class LineageVerifier:
     Plato's Cave principle: a derived artefact inherits trust from its
     parent.  An orphan derived mesh with no parent is suspicious; a
     raw CT stack with parent metadata is well-grounded.
+
+    Parameters
+    ----------
+    cache
+        Optional :class:`integrity_cache.RecordCache` used for parent
+        media lookups.  When provided, the verifier delegates the
+        parent fetch to the cache (which de-duplicates across all
+        verifiers, throttles politely, and short-circuits behind the
+        cache's circuit breaker).  When ``None``, the verifier never
+        touches the network — it only checks the locally available
+        ``media_parent_id`` field.
+    allow_network
+        Backward-compatibility flag; ignored when ``cache`` is None.
     """
 
     name = "lineage"
@@ -314,7 +318,8 @@ class LineageVerifier:
     _RAW_INDICATORS = ("Volumetric Image Series", "CT Image Series", "Image Series")
     _DERIVED_INDICATORS = ("Mesh", "Surface", "Reconstruction", "Segmentation")
 
-    def __init__(self, allow_network: bool = True):
+    def __init__(self, cache: Optional[Any] = None, allow_network: bool = True):
+        self.cache = cache
         self.allow_network = allow_network
 
     def verify(self, record: Dict[str, Any]) -> VerifierResult:
@@ -333,15 +338,13 @@ class LineageVerifier:
         raw = any(token in media_type for token in self._RAW_INDICATORS)
 
         parent_resolved = False
-        if derived and parent_id and self.allow_network:
-            client = _get_morphosource_client()
-            if client is not None:
-                try:
-                    refetch = client.get_media(parent_id)
-                    parent_resolved = refetch.error is None and bool(refetch.data)
-                    result.evidence["parent_resolved"] = parent_resolved
-                except Exception as exc:
-                    result.notes.append(f"parent fetch raised: {exc}")
+        if derived and parent_id and self.cache is not None and self.allow_network:
+            try:
+                parent_record = self.cache.get(parent_id)
+                parent_resolved = bool(parent_record)
+                result.evidence["parent_resolved"] = parent_resolved
+            except Exception as exc:
+                result.notes.append(f"parent cache lookup raised: {exc}")
 
         result.evidence.update({
             "media_type": media_type,

@@ -62,9 +62,10 @@ Files:
 |------|---------|
 | `.github/scripts/integrity_graph.py` | DAG data structures, trust propagation, release decision, Markdown rendering |
 | `.github/scripts/integrity_verifiers.py` | Five MVP verifier agents |
+| `.github/scripts/integrity_cache.py` | Polite, persistent MorphoSource record cache (memory + disk + circuit breaker) |
 | `.github/scripts/verify_research_run.py` | CLI entry point + GitHub orchestration |
 | `.github/workflows/verify_research_run.yml` | Workflow (`workflow_dispatch`, `workflow_run`, `issue_comment`) |
-| `Tests/test_integrity_*.py` | Offline pytest coverage (43 tests) |
+| `Tests/test_integrity_*.py` | Offline pytest coverage (66 tests) |
 
 ## DAG ontology
 
@@ -190,6 +191,47 @@ python .github/scripts/verify_research_run.py \
 Outputs land in `~/.autoresearchclaw/integrity/` (timestamped pairs of
 `*.json` and `*.md`).  Override the home directory with
 `AUTORESEARCHCLAW_HOME=/path/to/dir`.
+
+## Being a good citizen of the MorphoSource API
+
+The verifier hits the public MorphoSource API for every distinct media
+ID it sees.  An early version fanned three independent calls per media
+ID and used the global 30 s timeout × 3 retries — a single ``/verify``
+run could keep a slow MorphoSource server pinned for half an hour.
+The current implementation is deliberately conservative:
+
+| Knob | Default | Override (CLI / env) | Notes |
+|------|---------|----------------------|-------|
+| Per-call timeout | 10 s | `--api-timeout` / `VERIFIER_API_TIMEOUT` | down from the 30 s used by `research_agent` |
+| Retries per call | 1 | `--api-retries` / `VERIFIER_API_RETRIES` | one retry, not three |
+| Min delay between calls | 0.5 s | `--api-min-delay` / `VERIFIER_API_MIN_DELAY` | enforced by `RecordCache` |
+| Circuit-breaker threshold | 3 consecutive failures | `--circuit-breaker` / `VERIFIER_CIRCUIT_BREAKER` | once open, no more network calls this run |
+| Disk-cache TTL | 7 days | `--cache-ttl-days` / `VERIFIER_CACHE_TTL_DAYS` | `0` disables expiry |
+| Disk cache | enabled | `--no-cache` | persistent under `~/.autoresearchclaw/integrity/cache/` |
+| Max distinct media IDs | 10 | `--max-media` | hard cap to keep total traffic bounded |
+| Network entirely off | — | `--no-network` | falls back to bare-id scoring |
+
+How the cache eliminates duplicate fetches:
+
+1. `MetadataVerifier` no longer calls the API at all — it scores the
+   record the cache already has (looking for ≥2 substantive fields to
+   call it "resolved").
+2. `LineageVerifier` routes its parent-media lookup through the same
+   `RecordCache`, so the parent fetch is reused if any other path
+   already requested it.
+3. Negative results are memoized for the lifetime of the run — if
+   `media/004088332` times out once, the verifier never re-asks for
+   it during the same `/verify`.
+4. After the configured number of consecutive failures the cache
+   opens its circuit breaker, refuses further outbound calls, and
+   surfaces the fact in both the JSON artefact and the GitHub
+   comment so a maintainer can re-run later.
+
+The Markdown report appended to the GitHub issue includes a small
+**Cache & API politeness** block summarising memory hits, disk hits,
+network calls, and breaker state.  A breaker-tripped run is also
+called out with a ⚠️ banner so the reader knows scores were partly
+based on cache-only data.
 
 ## Exit codes
 

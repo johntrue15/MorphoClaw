@@ -141,6 +141,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests python-dotenv openai
 
+      # Persist the verifier's disk-cached MorphoSource records across
+      # workflow runs.  This is what keeps a re-run of /verify on the
+      # same issue from re-hitting the API for records we already
+      # resolved.
+      - name: Restore integrity record cache
+        if: steps.resolve.outputs.issue_number != ''
+        uses: actions/cache@v4
+        with:
+          path: ~/.autoresearchclaw/integrity/cache
+          key: integrity-cache-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            integrity-cache-${{ runner.os }}-
+
       - name: Run integrity verifier
         id: verify
         if: steps.resolve.outputs.issue_number != ''
@@ -185,10 +198,17 @@ jobs:
       - name: Job summary
         if: always() && steps.resolve.outputs.issue_number != ''
         run: |
-          echo "## MorphoDepot Integrity Verification" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Issue: #${{ steps.resolve.outputs.issue_number }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Status: \`${{ steps.verify.outputs.integrity_status || 'unknown' }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Scientific validity: ${{ steps.verify.outputs.scientific_validity || 'n/a' }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- AI training validity: ${{ steps.verify.outputs.ai_training_validity || 'n/a' }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Commercial release validity: ${{ steps.verify.outputs.commercial_release_validity || 'n/a' }}" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## MorphoDepot Integrity Verification"
+            echo ""
+            echo "- Issue: #${{ steps.resolve.outputs.issue_number }}"
+            echo "- Status: \`${{ steps.verify.outputs.integrity_status || 'unknown' }}\`"
+            echo "- Scientific validity: ${{ steps.verify.outputs.scientific_validity || 'n/a' }}"
+            echo "- AI training validity: ${{ steps.verify.outputs.ai_training_validity || 'n/a' }}"
+            echo "- Commercial release validity: ${{ steps.verify.outputs.commercial_release_validity || 'n/a' }}"
+            echo ""
+            echo "### MorphoSource API politeness"
+            echo "- Network calls: ${{ steps.verify.outputs.cache_network_calls || '0' }}"
+            echo "- Network failures: ${{ steps.verify.outputs.cache_network_failures || '0' }}"
+            echo "- Circuit breaker: \`${{ steps.verify.outputs.cache_circuit_open || 'closed' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

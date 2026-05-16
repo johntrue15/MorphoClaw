@@ -57,6 +57,7 @@ from _helpers import (
     load_dotenv,
     safe_first,
 )
+from integrity_cache import RecordCache
 from integrity_graph import IntegrityGraph
 from integrity_verifiers import (
     AIQCVerifier,
@@ -276,10 +277,28 @@ def build_graph(
     child_issues: List[Tuple[Dict[str, Any], List[Dict[str, Any]]]],
     use_llm: bool = True,
     allow_network: bool = True,
+    cache: Optional[RecordCache] = None,
+    max_media: int = 10,
 ) -> IntegrityGraph:
-    """Construct the integrity DAG for a research run."""
+    """Construct the integrity DAG for a research run.
+
+    Parameters
+    ----------
+    cache
+        A pre-built :class:`integrity_cache.RecordCache`.  When ``None``
+        a network-disabled cache is created locally so this function
+        remains drop-in usable from unit tests.
+    max_media
+        Hard cap on how many distinct MorphoSource media IDs the
+        verifier will inspect.  Defaults to ``10`` (down from the old
+        20) to keep total API traffic bounded even on issues that
+        mention dozens of records.
+    """
     topic = extract_topic(issue)
     issue_number = issue.get("number")
+
+    if cache is None:
+        cache = RecordCache(cache_dir=None, fetcher=None)  # offline default
 
     graph = IntegrityGraph(
         morphodepot_id=f"GH-{issue_number}",
@@ -296,10 +315,13 @@ def build_graph(
     )
 
     # 2. SourceRecord nodes for every media id mentioned across the
-    # parent + child issues.
+    # parent + child issues.  All API calls go through the shared
+    # cache so the three verifier paths (metadata / file / lineage)
+    # share a single fetch per media id.
     metadata_v = MetadataVerifier(allow_network=allow_network)
     file_v = FileVerifier()
-    lineage_v = LineageVerifier(allow_network=allow_network)
+    lineage_v = LineageVerifier(cache=cache if allow_network else None,
+                                  allow_network=allow_network)
 
     full_text = (issue.get("body") or "") + "\n" + "\n".join(
         c.get("body", "") for c in comments
@@ -310,12 +332,15 @@ def build_graph(
             full_text += "\n" + cc.get("body", "")
 
     media_ids = extract_media_ids(full_text)
-    log.info("Found %d unique media IDs across run", len(media_ids))
+    log.info("Found %d unique media IDs across run (capped to %d)",
+             len(media_ids), max_media)
 
     source_node_ids: Dict[str, int] = {}
     record_cache: Dict[str, Dict[str, Any]] = {}
-    for mid in media_ids[:20]:  # cap to keep API calls bounded
-        record = _fetch_media_record(mid, allow_network=allow_network)
+    for mid in media_ids[:max_media]:
+        record = cache.get(mid) if allow_network else {"id": [mid]}
+        if not record:
+            record = {"id": [mid]}
         record_cache[mid] = record
         meta_result = metadata_v.verify(record)
         snid = graph.add_node(
@@ -477,23 +502,49 @@ def _extract_dois(record: Dict[str, Any]) -> List[Tuple[str, str]]:
     return out
 
 
-def _fetch_media_record(media_id: str, allow_network: bool = True) -> Dict[str, Any]:
-    """Fetch a media record from MorphoSource, returning ``{}`` on failure."""
-    if not allow_network:
-        return {"id": [media_id]}
+def build_polite_client(timeout_s: float = 10.0, max_retries: int = 1):
+    """Construct a low-impact MorphoSourceClient for verification use.
+
+    The default client used by ``research_agent`` and friends has a
+    30-second timeout and 3 retries — appropriate for the data-gathering
+    path.  The verifier should *never* burn a minute waiting for one
+    media id, so we hand the cache a much politer client (10 s timeout,
+    a single retry) and let the cache's circuit breaker handle the
+    rest.
+
+    Returns ``None`` if the underlying ``morphosource_client`` module
+    cannot be imported, which puts the cache in offline mode.
+    """
     try:
-        from morphosource_client import get_client
-        client = get_client()
-        record = client.get_media(media_id)
+        from morphosource_client import MorphoSourceClient
+    except ImportError:
+        return None
+    return MorphoSourceClient(timeout=timeout_s, max_retries=max_retries,
+                               backoff_factor=1.0)
+
+
+def make_morphosource_fetcher(client) -> "Optional[Any]":
+    """Wrap *client* as a ``fetcher(media_id) -> dict | None`` callable.
+
+    Returns ``None`` when *client* is ``None``.
+    """
+    if client is None:
+        return None
+
+    def fetcher(media_id: str):
+        try:
+            record = client.get_media(media_id)
+        except Exception as exc:
+            log.warning("MorphoSource fetch raised for %s: %s", media_id, exc)
+            return None
         if record.error or not record.data:
-            return {"id": [media_id]}
+            return None
         data = record.data
         if isinstance(data.get("response"), dict):
             data = data["response"]
         return data
-    except Exception as exc:
-        log.warning("Could not fetch media %s: %s", media_id, exc)
-        return {"id": [media_id]}
+
+    return fetcher
 
 
 # ---------------------------------------------------------------------------
@@ -638,6 +689,25 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="Print the integrity report instead of posting it")
     parser.add_argument("--out-json", type=str, default=None,
                         help="Override output JSON path")
+    parser.add_argument("--max-media", type=int, default=10,
+                        help="Maximum distinct media IDs to inspect (default: 10)")
+    parser.add_argument("--api-timeout", type=float,
+                        default=float(os.environ.get("VERIFIER_API_TIMEOUT", "10")),
+                        help="Per-call MorphoSource timeout in seconds (default: 10)")
+    parser.add_argument("--api-retries", type=int,
+                        default=int(os.environ.get("VERIFIER_API_RETRIES", "1")),
+                        help="Per-call MorphoSource retry count (default: 1)")
+    parser.add_argument("--api-min-delay", type=float,
+                        default=float(os.environ.get("VERIFIER_API_MIN_DELAY", "0.5")),
+                        help="Minimum seconds between MorphoSource calls (default: 0.5)")
+    parser.add_argument("--circuit-breaker", type=int,
+                        default=int(os.environ.get("VERIFIER_CIRCUIT_BREAKER", "3")),
+                        help="Open the circuit after N consecutive failures (default: 3)")
+    parser.add_argument("--cache-ttl-days", type=int,
+                        default=int(os.environ.get("VERIFIER_CACHE_TTL_DAYS", "7")),
+                        help="Disk-cache TTL in days (default: 7; 0 disables TTL)")
+    parser.add_argument("--no-cache", action="store_true",
+                        help="Disable the on-disk record cache")
     args = parser.parse_args(argv)
 
     token = os.environ.get("GITHUB_TOKEN", "")
@@ -676,10 +746,38 @@ def main(argv: Optional[List[str]] = None) -> int:
         log.error("No issue resolved; aborting")
         return 2
 
+    # Build a verification-specific MorphoSource client (short timeout,
+    # low retries) and a polite, persistent record cache.  This is what
+    # keeps a single ``/verify`` run from turning into a 30-minute
+    # connection storm against the public MorphoSource API.
+    cache: Optional[RecordCache]
+    if args.no_network:
+        cache = RecordCache(cache_dir=None, fetcher=None,
+                             min_delay_s=0.0, circuit_breaker_threshold=0)
+    else:
+        client = build_polite_client(
+            timeout_s=args.api_timeout,
+            max_retries=args.api_retries,
+        )
+        cache_dir = None if args.no_cache else _ensure_reports_dir() / "cache"
+        cache = RecordCache(
+            cache_dir=cache_dir,
+            ttl_days=args.cache_ttl_days,
+            fetcher=make_morphosource_fetcher(client),
+            min_delay_s=args.api_min_delay,
+            circuit_breaker_threshold=args.circuit_breaker,
+        )
+        log.info("Verifier client: timeout=%.1fs retries=%d min-delay=%.2fs "
+                 "breaker=%d cache-dir=%s",
+                 args.api_timeout, args.api_retries, args.api_min_delay,
+                 args.circuit_breaker, cache_dir or "(disabled)")
+
     graph = build_graph(
         issue, comments, child_pairs,
         use_llm=not args.no_llm,
         allow_network=not args.no_network,
+        cache=cache,
+        max_media=args.max_media,
     )
     decision = graph.release_decision()
     log.info("Integrity status: %s | scientific=%.2f | training=%.2f | commercial=%.2f",
@@ -687,6 +785,16 @@ def main(argv: Optional[List[str]] = None) -> int:
              decision["scientific_validity"],
              decision["ai_training_validity"],
              decision["commercial_release_validity"])
+    if cache:
+        log.info("Cache: %s", cache.stats.summary())
+        if cache.stats.circuit_open:
+            log.warning(
+                "MorphoSource circuit breaker opened mid-run after %d "
+                "failure(s); %d media id(s) were scored with cache-only "
+                "data.  Consider re-running ``/verify`` later.",
+                cache.stats.network_failures,
+                cache.stats.skipped_after_breaker,
+            )
 
     artefacts = write_artifacts(graph, args.issue)
     if args.out_json:
@@ -698,6 +806,27 @@ def main(argv: Optional[List[str]] = None) -> int:
         log.info("Also wrote %s", args.out_json)
 
     markdown = graph.to_markdown()
+    if cache and (cache.stats.network_calls or cache.stats.disk_hits
+                   or cache.stats.skipped_after_breaker):
+        breaker_note = ""
+        if cache.stats.circuit_open:
+            breaker_note = (
+                f"\n> ⚠️ MorphoSource circuit breaker tripped after "
+                f"{cache.stats.network_failures} failure(s); "
+                f"{cache.stats.skipped_after_breaker} media id(s) were "
+                f"scored from cache only.  Re-run `/verify` later for "
+                f"a fresh check.\n"
+            )
+        markdown += (
+            f"\n\n### Cache & API politeness\n\n"
+            f"- Memory hits: `{cache.stats.memory_hits}`\n"
+            f"- Disk hits: `{cache.stats.disk_hits}`\n"
+            f"- Network calls: `{cache.stats.network_calls}` "
+            f"(`{cache.stats.network_failures}` failed)\n"
+            f"- Min delay between calls: `{cache.min_delay_s:.2f}s`\n"
+            f"- Circuit breaker: `{'open' if cache.stats.circuit_open else 'closed'}`\n"
+            f"{breaker_note}"
+        )
     post_or_print(client, args.issue, markdown, args.dry_run)
     if not args.dry_run and client and issue:
         label_issue(client, issue, decision["status"])
@@ -711,6 +840,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             f.write(f"ai_training_validity={decision['ai_training_validity']}\n")
             f.write(f"commercial_release_validity={decision['commercial_release_validity']}\n")
             f.write(f"integrity_report={artefacts['markdown']}\n")
+            if cache:
+                f.write(f"cache_network_calls={cache.stats.network_calls}\n")
+                f.write(f"cache_network_failures={cache.stats.network_failures}\n")
+                f.write(f"cache_circuit_open={'true' if cache.stats.circuit_open else 'false'}\n")
 
     return _exit_code_for(decision["status"])
 

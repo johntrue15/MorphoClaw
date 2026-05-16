@@ -1,0 +1,681 @@
+{
+  "morphodepot_id": "GH-0",
+  "source": {
+    "repository": "GitHub",
+    "issue_number": 0,
+    "topic": "Open-access CT scans of Chamaeleo calyptratus"
+  },
+  "nodes": [
+    {
+      "id": 0,
+      "role": "ResearchTopic",
+      "text": "Open-access CT scans of Chamaeleo calyptratus",
+      "parents": [],
+      "metrics": {
+        "credibility": 0.85,
+        "relevance": 0.85,
+        "evidence_strength": 0.85,
+        "method_rigor": 0.85,
+        "reproducibility": 0.85,
+        "authority_support": 0.85
+      },
+      "evidence": {},
+      "verifier": "(seed)",
+      "propagated_metrics": {
+        "credibility": 0.85,
+        "relevance": 0.85,
+        "evidence_strength": 0.85,
+        "method_rigor": 0.85,
+        "reproducibility": 0.85,
+        "authority_support": 0.85
+      },
+      "notes": []
+    },
+    {
+      "id": 1,
+      "role": "SourceRecord",
+      "text": "MorphoSource media 000769445: (no title)",
+      "parents": [
+        0
+      ],
+      "metrics": {
+        "credibility": 0.8,
+        "relevance": 0.14285714285714285,
+        "evidence_strength": 0.14285714285714285,
+        "method_rigor": 0.5,
+        "reproducibility": 0.7,
+        "authority_support": 0.2
+      },
+      "evidence": {
+        "media_id": "000769445",
+        "fields_present": [
+          "id"
+        ],
+        "coverage": 0.143,
+        "resolved_via_cache": false
+      },
+      "verifier": "metadata",
+      "propagated_metrics": {
+        "credibility": 0.7280000000000001,
+        "relevance": 0.13,
+        "evidence_strength": 0.13,
+        "method_rigor": 0.455,
+        "reproducibility": 0.637,
+        "authority_support": 0.18200000000000002,
+        "_overall": 0.377
+      },
+      "notes": [
+        "missing taxonomy_name",
+        "missing organisation",
+        "no DOI in cite_as / description",
+        "record is bare media id only (cache miss / network skipped)"
+      ]
+    },
+    {
+      "id": 2,
+      "role": "SourceRecord",
+      "text": "File metadata for media 000769445",
+      "parents": [
+        1
+      ],
+      "metrics": {
+        "credibility": 0.3,
+        "relevance": 0.4,
+        "evidence_strength": 0.2,
+        "method_rigor": 0.4,
+        "reproducibility": 0.0,
+        "authority_support": 0.5
+      },
+      "evidence": {
+        "modality": "",
+        "media_type": "",
+        "device": "",
+        "spacing_values": [],
+        "spacing_consistent": false,
+        "slice_count": 0
+      },
+      "verifier": "file",
+      "propagated_metrics": {
+        "credibility": 0.18786,
+        "relevance": 0.25048,
+        "evidence_strength": 0.12524,
+        "method_rigor": 0.25048,
+        "reproducibility": 0.0,
+        "authority_support": 0.3131,
+        "_overall": 0.18786
+      },
+      "notes": [
+        "missing modality",
+        "no voxel-spacing fields populated"
+      ]
+    },
+    {
+      "id": 3,
+      "role": "SourceRecord",
+      "text": "Lineage for media 000769445",
+      "parents": [
+        1
+      ],
+      "metrics": {
+        "credibility": 0.5,
+        "relevance": 0.3,
+        "evidence_strength": 0.5,
+        "method_rigor": 0.45,
+        "reproducibility": 0.4,
+        "authority_support": 0.6
+      },
+      "evidence": {
+        "media_type": "",
+        "parent_id": "",
+        "is_derived": false,
+        "is_raw": false
+      },
+      "verifier": "lineage",
+      "propagated_metrics": {
+        "credibility": 0.3131,
+        "relevance": 0.18786,
+        "evidence_strength": 0.3131,
+        "method_rigor": 0.28179,
+        "reproducibility": 0.25048,
+        "authority_support": 0.37572,
+        "_overall": 0.2870083333333333
+      },
+      "notes": []
+    },
+    {
+      "id": 4,
+      "role": "SourceRecord",
+      "text": "MorphoSource media 000191369: (no title)",
+      "parents": [
+        0
+      ],
+      "metrics": {
+        "credibility": 0.8,
+        "relevance": 0.14285714285714285,
+        "evidence_strength": 0.14285714285714285,
+        "method_rigor": 0.5,
+        "reproducibility": 0.7,
+        "authority_support": 0.2
+      },
+      "evidence": {
+        "media_id": "000191369",
+        "fields_present": [
+          "id"
+        ],
+        "coverage": 0.143,
+        "resolved_via_cache": false
+      },
+      "verifier": "metadata",
+      "propagated_metrics": {
+        "credibility": 0.7280000000000001,
+        "relevance": 0.13,
+        "evidence_strength": 0.13,
+        "method_rigor": 0.455,
+        "reproducibility": 0.637,
+        "authority_support": 0.18200000000000002,
+        "_overall": 0.377
+      },
+      "notes": [
+        "missing taxonomy_name",
+        "missing organisation",
+        "no DOI in cite_as / description",
+        "record is bare media id only (cache miss / network skipped)"
+      ]
+    },
+    {
+      "id": 5,
+      "role": "SourceRecord",
+      "text": "File metadata for media 000191369",
+      "parents": [
+        4
+      ],
+      "metrics": {
+        "credibility": 0.3,
+        "relevance": 0.4,
+        "evidence_strength": 0.2,
+        "method_rigor": 0.4,
+        "reproducibility": 0.0,
+        "authority_support": 0.5
+      },
+      "evidence": {
+        "modality": "",
+        "media_type": "",
+        "device": "",
+        "spacing_values": [],
+        "spacing_consistent": false,
+        "slice_count": 0
+      },
+      "verifier": "file",
+      "propagated_metrics": {
+        "credibility": 0.18786,
+        "relevance": 0.25048,
+        "evidence_strength": 0.12524,
+        "method_rigor": 0.25048,
+        "reproducibility": 0.0,
+        "authority_support": 0.3131,
+        "_overall": 0.18786
+      },
+      "notes": [
+        "missing modality",
+        "no voxel-spacing fields populated"
+      ]
+    },
+    {
+      "id": 6,
+      "role": "SourceRecord",
+      "text": "Lineage for media 000191369",
+      "parents": [
+        4
+      ],
+      "metrics": {
+        "credibility": 0.5,
+        "relevance": 0.3,
+        "evidence_strength": 0.5,
+        "method_rigor": 0.45,
+        "reproducibility": 0.4,
+        "authority_support": 0.6
+      },
+      "evidence": {
+        "media_type": "",
+        "parent_id": "",
+        "is_derived": false,
+        "is_raw": false
+      },
+      "verifier": "lineage",
+      "propagated_metrics": {
+        "credibility": 0.3131,
+        "relevance": 0.18786,
+        "evidence_strength": 0.3131,
+        "method_rigor": 0.28179,
+        "reproducibility": 0.25048,
+        "authority_support": 0.37572,
+        "_overall": 0.2870083333333333
+      },
+      "notes": []
+    },
+    {
+      "id": 7,
+      "role": "SourceRecord",
+      "text": "MorphoSource media 000408242: (no title)",
+      "parents": [
+        0
+      ],
+      "metrics": {
+        "credibility": 0.8,
+        "relevance": 0.14285714285714285,
+        "evidence_strength": 0.14285714285714285,
+        "method_rigor": 0.5,
+        "reproducibility": 0.7,
+        "authority_support": 0.2
+      },
+      "evidence": {
+        "media_id": "000408242",
+        "fields_present": [
+          "id"
+        ],
+        "coverage": 0.143,
+        "resolved_via_cache": false
+      },
+      "verifier": "metadata",
+      "propagated_metrics": {
+        "credibility": 0.7280000000000001,
+        "relevance": 0.13,
+        "evidence_strength": 0.13,
+        "method_rigor": 0.455,
+        "reproducibility": 0.637,
+        "authority_support": 0.18200000000000002,
+        "_overall": 0.377
+      },
+      "notes": [
+        "missing taxonomy_name",
+        "missing organisation",
+        "no DOI in cite_as / description",
+        "record is bare media id only (cache miss / network skipped)"
+      ]
+    },
+    {
+      "id": 8,
+      "role": "SourceRecord",
+      "text": "File metadata for media 000408242",
+      "parents": [
+        7
+      ],
+      "metrics": {
+        "credibility": 0.3,
+        "relevance": 0.4,
+        "evidence_strength": 0.2,
+        "method_rigor": 0.4,
+        "reproducibility": 0.0,
+        "authority_support": 0.5
+      },
+      "evidence": {
+        "modality": "",
+        "media_type": "",
+        "device": "",
+        "spacing_values": [],
+        "spacing_consistent": false,
+        "slice_count": 0
+      },
+      "verifier": "file",
+      "propagated_metrics": {
+        "credibility": 0.18786,
+        "relevance": 0.25048,
+        "evidence_strength": 0.12524,
+        "method_rigor": 0.25048,
+        "reproducibility": 0.0,
+        "authority_support": 0.3131,
+        "_overall": 0.18786
+      },
+      "notes": [
+        "missing modality",
+        "no voxel-spacing fields populated"
+      ]
+    },
+    {
+      "id": 9,
+      "role": "SourceRecord",
+      "text": "Lineage for media 000408242",
+      "parents": [
+        7
+      ],
+      "metrics": {
+        "credibility": 0.5,
+        "relevance": 0.3,
+        "evidence_strength": 0.5,
+        "method_rigor": 0.45,
+        "reproducibility": 0.4,
+        "authority_support": 0.6
+      },
+      "evidence": {
+        "media_type": "",
+        "parent_id": "",
+        "is_derived": false,
+        "is_raw": false
+      },
+      "verifier": "lineage",
+      "propagated_metrics": {
+        "credibility": 0.3131,
+        "relevance": 0.18786,
+        "evidence_strength": 0.3131,
+        "method_rigor": 0.28179,
+        "reproducibility": 0.25048,
+        "authority_support": 0.37572,
+        "_overall": 0.2870083333333333
+      },
+      "notes": []
+    },
+    {
+      "id": 10,
+      "role": "Query",
+      "text": "Chamaeleo calyptratus",
+      "parents": [
+        0
+      ],
+      "metrics": {
+        "credibility": 0.7,
+        "relevance": 0.596,
+        "evidence_strength": 0.24,
+        "method_rigor": 0.7,
+        "reproducibility": 0.85,
+        "authority_support": 0.4
+      },
+      "evidence": {
+        "query": "Chamaeleo calyptratus",
+        "hits": 12
+      },
+      "verifier": "(parsed-from-issue)",
+      "propagated_metrics": {
+        "credibility": 0.637,
+        "relevance": 0.54236,
+        "evidence_strength": 0.2184,
+        "method_rigor": 0.637,
+        "reproducibility": 0.7735,
+        "authority_support": 0.36400000000000005,
+        "_overall": 0.52871
+      },
+      "notes": []
+    },
+    {
+      "id": 11,
+      "role": "SearchResult",
+      "text": "12 results for 'Chamaeleo calyptratus'",
+      "parents": [
+        10
+      ],
+      "metrics": {
+        "credibility": 0.85,
+        "relevance": 0.24,
+        "evidence_strength": 0.24,
+        "method_rigor": 0.7,
+        "reproducibility": 0.85,
+        "authority_support": 0.4
+      },
+      "evidence": {
+        "hits": 12
+      },
+      "verifier": "(parsed-from-issue)",
+      "propagated_metrics": {
+        "credibility": 0.6096421,
+        "relevance": 0.17213424,
+        "evidence_strength": 0.17213424,
+        "method_rigor": 0.5020582,
+        "reproducibility": 0.6096421,
+        "authority_support": 0.28689040000000005,
+        "_overall": 0.3920835466666666
+      },
+      "notes": []
+    },
+    {
+      "id": 12,
+      "role": "Query",
+      "text": "FLMNH herpetology",
+      "parents": [
+        0
+      ],
+      "metrics": {
+        "credibility": 0.7,
+        "relevance": 0.524,
+        "evidence_strength": 0.06,
+        "method_rigor": 0.7,
+        "reproducibility": 0.85,
+        "authority_support": 0.4
+      },
+      "evidence": {
+        "query": "FLMNH herpetology",
+        "hits": 3
+      },
+      "verifier": "(parsed-from-issue)",
+      "propagated_metrics": {
+        "credibility": 0.637,
+        "relevance": 0.47684000000000004,
+        "evidence_strength": 0.0546,
+        "method_rigor": 0.637,
+        "reproducibility": 0.7735,
+        "authority_support": 0.36400000000000005,
+        "_overall": 0.49049000000000004
+      },
+      "notes": []
+    },
+    {
+      "id": 13,
+      "role": "SearchResult",
+      "text": "3 results for 'FLMNH herpetology'",
+      "parents": [
+        12
+      ],
+      "metrics": {
+        "credibility": 0.85,
+        "relevance": 0.06,
+        "evidence_strength": 0.06,
+        "method_rigor": 0.7,
+        "reproducibility": 0.85,
+        "authority_support": 0.4
+      },
+      "evidence": {
+        "hits": 3
+      },
+      "verifier": "(parsed-from-issue)",
+      "propagated_metrics": {
+        "credibility": 0.5901499,
+        "relevance": 0.041657639999999996,
+        "evidence_strength": 0.041657639999999996,
+        "method_rigor": 0.48600579999999993,
+        "reproducibility": 0.5901499,
+        "authority_support": 0.2777176,
+        "_overall": 0.33788974666666666
+      },
+      "notes": []
+    },
+    {
+      "id": 14,
+      "role": "Discovery",
+      "text": "MorphoSource media 000769445 has open-access CT mesh data",
+      "parents": [
+        0,
+        1
+      ],
+      "metrics": {
+        "credibility": 0.8285,
+        "relevance": 0.8285,
+        "evidence_strength": 0.74565,
+        "method_rigor": 0.704225,
+        "reproducibility": 0.57995,
+        "authority_support": 0.4
+      },
+      "evidence": {
+        "claim": "MorphoSource media 000769445 has open-access CT mesh data",
+        "topic": "Open-access CT scans of Chamaeleo calyptratus"
+      },
+      "verifier": "ai_qc",
+      "propagated_metrics": {
+        "credibility": 0.5188067,
+        "relevance": 0.5188067,
+        "evidence_strength": 0.46692603,
+        "method_rigor": 0.44098569499999996,
+        "reproducibility": 0.36316468999999996,
+        "authority_support": 0.25048,
+        "_overall": 0.42652830249999996
+      },
+      "notes": [
+        "heuristic scorer (no OPENAI_API_KEY)"
+      ]
+    },
+    {
+      "id": 15,
+      "role": "Discovery",
+      "text": "Specimen uf:herp:191369 from FLMNH is well annotated",
+      "parents": [
+        0,
+        4
+      ],
+      "metrics": {
+        "credibility": 0.506,
+        "relevance": 0.506,
+        "evidence_strength": 0.4554,
+        "method_rigor": 0.4301,
+        "reproducibility": 0.35419999999999996,
+        "authority_support": 0.4
+      },
+      "evidence": {
+        "claim": "Specimen uf:herp:191369 from FLMNH is well annotated",
+        "topic": "Open-access CT scans of Chamaeleo calyptratus"
+      },
+      "verifier": "ai_qc",
+      "propagated_metrics": {
+        "credibility": 0.3168572,
+        "relevance": 0.3168572,
+        "evidence_strength": 0.28517148000000003,
+        "method_rigor": 0.26932861999999996,
+        "reproducibility": 0.22180003999999998,
+        "authority_support": 0.25048,
+        "_overall": 0.27674909
+      },
+      "notes": [
+        "heuristic scorer (no OPENAI_API_KEY)"
+      ]
+    },
+    {
+      "id": 16,
+      "role": "Discovery",
+      "text": "Found Chamaeleo calyptratus volumetric image series media 000408242",
+      "parents": [
+        0,
+        7
+      ],
+      "metrics": {
+        "credibility": 0.5135000000000001,
+        "relevance": 0.5135000000000001,
+        "evidence_strength": 0.46215000000000006,
+        "method_rigor": 0.43647500000000006,
+        "reproducibility": 0.35945000000000005,
+        "authority_support": 0.4
+      },
+      "evidence": {
+        "claim": "Found Chamaeleo calyptratus volumetric image series media 000408242",
+        "topic": "Open-access CT scans of Chamaeleo calyptratus"
+      },
+      "verifier": "ai_qc",
+      "propagated_metrics": {
+        "credibility": 0.32155370000000005,
+        "relevance": 0.32155370000000005,
+        "evidence_strength": 0.28939833000000004,
+        "method_rigor": 0.27332064500000003,
+        "reproducibility": 0.22508759000000003,
+        "authority_support": 0.25048,
+        "_overall": 0.28023232750000004
+      },
+      "notes": [
+        "heuristic scorer (no OPENAI_API_KEY)"
+      ]
+    },
+    {
+      "id": 17,
+      "role": "Discovery",
+      "text": "Multiple promising leads in Squamata reptile family",
+      "parents": [
+        0
+      ],
+      "metrics": {
+        "credibility": 0.34550000000000003,
+        "relevance": 0.34550000000000003,
+        "evidence_strength": 0.31095000000000006,
+        "method_rigor": 0.293675,
+        "reproducibility": 0.24185,
+        "authority_support": 0.4
+      },
+      "evidence": {
+        "claim": "Multiple promising leads in Squamata reptile family",
+        "topic": "Open-access CT scans of Chamaeleo calyptratus"
+      },
+      "verifier": "ai_qc",
+      "propagated_metrics": {
+        "credibility": 0.31440500000000005,
+        "relevance": 0.31440500000000005,
+        "evidence_strength": 0.28296450000000006,
+        "method_rigor": 0.26724425,
+        "reproducibility": 0.22008350000000002,
+        "authority_support": 0.36400000000000005,
+        "_overall": 0.29385037500000005
+      },
+      "notes": [
+        "heuristic scorer (no OPENAI_API_KEY)"
+      ]
+    },
+    {
+      "id": 18,
+      "role": "ExpertReview",
+      "text": "Expert review of issue #0 (0 human comments, 0 positive reactions)",
+      "parents": [
+        14,
+        15,
+        16,
+        17
+      ],
+      "metrics": {
+        "credibility": 0.4,
+        "relevance": 0.5,
+        "evidence_strength": 0.4,
+        "method_rigor": 0.6,
+        "reproducibility": 0.6,
+        "authority_support": 0.4
+      },
+      "evidence": {
+        "human_comment_count": 0,
+        "accept_keywords": 0,
+        "reject_keywords": 0,
+        "positive_reactions": 0,
+        "negative_reactions": 0,
+        "labels": []
+      },
+      "verifier": "expert",
+      "propagated_metrics": {
+        "credibility": 0.22641978160000004,
+        "relevance": 0.28302472700000003,
+        "evidence_strength": 0.22641978160000004,
+        "method_rigor": 0.3396296724,
+        "reproducibility": 0.3396296724,
+        "authority_support": 0.22641978160000004,
+        "_overall": 0.2735905694333334
+      },
+      "notes": [
+        "no human reviewer activity detected"
+      ]
+    }
+  ],
+  "release_decision": {
+    "scientific_validity": 0.3296,
+    "ai_training_validity": 0.3424,
+    "commercial_release_validity": 0.3148,
+    "status": "rejected",
+    "weakest_dimension": "commercial_release_validity",
+    "per_metric_means": {
+      "credibility": 0.4366,
+      "relevance": 0.2607,
+      "evidence_strength": 0.2079,
+      "method_rigor": 0.3786,
+      "reproducibility": 0.3766,
+      "authority_support": 0.2915
+    }
+  },
+  "validation_errors": []
+}
