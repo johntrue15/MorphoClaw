@@ -83,6 +83,7 @@ def _require_backend():
 
 
 def _select_device():
+    import sys
     import torch
 
     forced = os.environ.get("NNINTERACTIVE_DEVICE", "").strip().lower()
@@ -91,6 +92,19 @@ def _select_device():
         return torch.device(forced)
     if torch.cuda.is_available():
         return torch.device("cuda:0")
+    # NOTE: nnU-Net's encoder uses ops (avg_pool3d.out and friends) that are
+    # not implemented for MPS in current PyTorch builds. Even with
+    # PYTORCH_ENABLE_MPS_FALLBACK=1, the fall-back path produces 0-dim
+    # tensors that break downstream calls ("Dimension specified as -1 but
+    # tensor has no dimensions"). CPU is slow but correct, so we default to
+    # it on Apple Silicon. Set NNINTERACTIVE_DEVICE=mps to override.
+    if sys.platform == "darwin":
+        if (getattr(torch.backends, "mps", None)
+                and torch.backends.mps.is_available()):
+            log.info("Apple Silicon detected — defaulting to CPU "
+                     "(MPS lacks nnU-Net 3D ops; set "
+                     "NNINTERACTIVE_DEVICE=mps to override)")
+        return torch.device("cpu")
     if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
         log.info("CUDA unavailable — using Apple Silicon MPS device")
         return torch.device("mps")
@@ -183,11 +197,28 @@ class Segmenter:
             self.device, self.model_path,
         )
 
+        # Thread count: on CPU inference each thread can hold its own copy
+        # of intermediate 3D feature maps, so high thread counts on
+        # memory-constrained machines (e.g. 16 GB Mac mini) cause OOM-kills
+        # during sliding-window inference. Empirically on a 119^3 volume the
+        # peak memory is ~10.5 GB at 1 thread and >16 GB (SIGKILL) at
+        # 4 threads. Default to 1 thread on CPU and let the user override
+        # with NNINTERACTIVE_TORCH_THREADS for bigger machines.
+        env_threads = os.environ.get("NNINTERACTIVE_TORCH_THREADS", "").strip()
+        if env_threads.isdigit() and int(env_threads) > 0:
+            n_threads = int(env_threads)
+        elif self.device.type == "cuda":
+            n_threads = os.cpu_count() or 4
+        else:
+            n_threads = 1
+        log.info("nnInteractive torch_n_threads=%d (device=%s)",
+                 n_threads, self.device.type)
+
         self._session = nnInteractiveInferenceSession(
             device=self.device,
             use_torch_compile=config.use_torch_compile,
             verbose=config.verbose,
-            torch_n_threads=os.cpu_count() or 4,
+            torch_n_threads=n_threads,
             do_autozoom=config.do_autozoom,
             use_pinned_memory=config.use_pinned_memory and self.device.type == "cuda",
         )
@@ -360,6 +391,29 @@ class Segmenter:
 # ---------------------------------------------------------------------------
 # Scripted batch entry-point: read a JSON prompt list, run, save outputs
 # ---------------------------------------------------------------------------
+
+
+def make_segmenter(config: SegmenterConfig):
+    """Pick the local or remote nnInteractive backend.
+
+    If the ``NNI_REMOTE_WS`` environment variable is set (e.g.
+    ``ws://localhost:8765``), a :class:`RemoteSegmenter` is returned that
+    talks to a remote nnInteractive WebSocket server (see
+    ``.github/scripts/nni_ws_server.py``) and stays API-compatible with
+    :class:`Segmenter`. Otherwise, a local :class:`Segmenter` is returned.
+
+    The remote path is preferred on memory-constrained machines (e.g. a
+    16 GB Mac mini) where loading nnInteractive's nnU-Net model triggers
+    OS-level OOM kills during inference. Heavy lifting (model + inference)
+    happens on the remote box; volume/mask rendering still happens locally.
+    """
+    remote_url = os.environ.get("NNI_REMOTE_WS", "").strip()
+    if remote_url:
+        # Imported lazily so the local environment doesn't need the
+        # websocket dependency unless we're actually using a remote server.
+        from nninteractive_remote import RemoteSegmenter  # noqa: WPS433
+        return RemoteSegmenter(config, ws_url=remote_url)
+    return Segmenter(config)
 
 
 def run_scripted(prompt_file: str, input_path: str, output_dir: str,

@@ -115,9 +115,20 @@ class SegMetrics:
 
 
 def _binarise(image, threshold: float = 0.5):
-    """Return a UInt8 binary SimpleITK image (foreground = 1)."""
+    """Return a UInt8 binary SimpleITK image (foreground = 1).
+
+    Note: ``sitk.BinaryThreshold`` is broken in SimpleITK 2.5.x — it returns
+    an all-foreground image regardless of the threshold arguments. We
+    threshold via numpy instead and rebuild a SimpleITK image with the
+    same geometry to keep this function dependency-stable across versions.
+    """
     import SimpleITK as sitk
-    return sitk.Cast(sitk.BinaryThreshold(image, threshold, 1e30, 1, 0), sitk.sitkUInt8)
+    import numpy as np
+    arr = sitk.GetArrayFromImage(image)
+    binary_arr = (arr > threshold).astype(np.uint8)
+    out = sitk.GetImageFromArray(binary_arr)
+    out.CopyInformation(image)
+    return out
 
 
 def _check_grid(pred, gt):

@@ -43,7 +43,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from nninteractive_segment import (  # noqa: E402
-    NNInteractiveUnavailable, Segmenter, SegmenterConfig,
+    NNInteractiveUnavailable, Segmenter, SegmenterConfig, make_segmenter,
 )
 
 try:
@@ -158,8 +158,34 @@ def _call_vision_llm(api_key: str, model: str, system: str,
     )
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
-            data = json.loads(r.read().decode("utf-8"))
-        return data["choices"][0]["message"]["content"].strip()
+            raw = r.read().decode("utf-8")
+            status = r.status
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            log.error("Raw HTTP LLM returned non-JSON (status=%s): %s",
+                      status, raw[:300])
+            return None
+        choices = data.get("choices") or []
+        if not choices:
+            log.error("Raw HTTP LLM response had no choices "
+                      "(status=%s, body head=%s)", status, raw[:300])
+            return None
+        content = (choices[0].get("message") or {}).get("content") or ""
+        if not content:
+            log.error("Raw HTTP LLM returned empty content "
+                      "(finish_reason=%s, body head=%s)",
+                      choices[0].get("finish_reason"), raw[:300])
+            return None
+        return content.strip()
+    except urllib.error.HTTPError as exc:
+        body = ""
+        try:
+            body = exc.read().decode("utf-8", errors="replace")[:400]
+        except Exception:
+            pass
+        log.error("Raw HTTP LLM call HTTP %s: %s", exc.code, body)
+        return None
     except Exception as exc:
         log.error("Raw HTTP LLM call failed: %s", exc)
         return None
@@ -215,10 +241,15 @@ def run_loop(input_path: str, goal: str, output_dir: str,
     cfg = SegmenterConfig(input_path=input_path, output_dir=str(output),
                           media_id=media_id)
     try:
-        seg = Segmenter(cfg)
+        # Returns either a local Segmenter or a RemoteSegmenter depending
+        # on NNI_REMOTE_WS — see nninteractive_segment.make_segmenter.
+        seg = make_segmenter(cfg)
     except NNInteractiveUnavailable as exc:
         log.error("%s", exc)
         return {"success": False, "error": str(exc)}
+    except Exception as exc:
+        log.exception("Failed to construct segmenter")
+        return {"success": False, "error": f"segmenter init failed: {exc}"}
 
     log.info("=" * 60)
     log.info("nnInteractive paint loop")

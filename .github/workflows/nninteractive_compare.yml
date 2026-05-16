@@ -38,15 +38,37 @@ on:
         type: string
         default: ''
       goal:
-        description: 'Plain-English nnInteractive goal (e.g. "Segment the cranial bone")'
-        required: true
+        description: 'Plain-English nnInteractive goal (e.g. "Segment the cranial bone"). Leave blank when using a preset.'
+        required: false
         type: string
-        default: 'Segment the cranial bone'
+        default: ''
       max_steps:
         description: 'Maximum LLM iterations in the paint loop'
         required: false
         type: number
         default: 12
+      preset:
+        description: 'Pre-canned test pair (overrides ct_media_id/gt_media_id/goal). "chameleon_stapes" uses uf:herp:191369 right stapes vs head CT (small, fast).'
+        required: false
+        type: choice
+        default: ''
+        options:
+          - ''
+          - chameleon_stapes
+      voxelize_backend:
+        description: 'GT-mesh voxelization backend. vtk = pure-Python (no Slicer GUI needed); slicer = headless Slicer; auto = Slicer first, VTK fallback.'
+        required: false
+        type: choice
+        default: 'vtk'
+        options:
+          - vtk
+          - slicer
+          - auto
+      crop_around_mesh_mm:
+        description: 'If >0, crop the CT to the GT mesh bbox + margin (mm) before running. Recommended for small parts (e.g. 4 for the stapes).'
+        required: false
+        type: number
+        default: 0
 
 jobs:
   compare:
@@ -112,8 +134,17 @@ jobs:
               ARGS+=(--require-taxonomy "${{ inputs.require_taxonomy }}")
             fi
           fi
-          ARGS+=(--goal "${{ inputs.goal }}")
+          if [ -n "${{ inputs.preset }}" ]; then
+            ARGS+=(--preset "${{ inputs.preset }}")
+          fi
+          if [ -n "${{ inputs.goal }}" ]; then
+            ARGS+=(--goal "${{ inputs.goal }}")
+          fi
           ARGS+=(--max-steps "${{ inputs.max_steps || 12 }}")
+          ARGS+=(--voxelize-backend "${{ inputs.voxelize_backend || 'vtk' }}")
+          if [ "${{ inputs.crop_around_mesh_mm || 0 }}" != "0" ]; then
+            ARGS+=(--crop-around-mesh-mm "${{ inputs.crop_around_mesh_mm }}")
+          fi
           ARGS+=(--output-dir /tmp/nni_compare)
 
           set +e

@@ -29,8 +29,37 @@ set -euo pipefail
 NNI_HOME="${NNINTERACTIVE_HOME:-$HOME/.autoresearchclaw/nninteractive}"
 NNI_MODEL_DIR="${NNINTERACTIVE_MODEL_DIR:-$NNI_HOME/models}"
 NNI_MODEL_NAME="${NNINTERACTIVE_MODEL:-nnInteractive_v1.0}"
-NNI_PY="${NNINTERACTIVE_PY:-python3}"
 NNI_FORCE="${NNINTERACTIVE_FORCE:-0}"
+
+# nnInteractive >= 1.1 requires Python 3.10+. Pick the newest interpreter
+# available (3.10..3.13). The caller can still override with NNINTERACTIVE_PY.
+_pick_python() {
+    if [ -n "${NNINTERACTIVE_PY:-}" ]; then
+        echo "$NNINTERACTIVE_PY"
+        return
+    fi
+    for cand in \
+        python3.13 python3.12 python3.11 python3.10 \
+        /opt/homebrew/bin/python3.13 /opt/homebrew/bin/python3.12 \
+        /opt/homebrew/bin/python3.11 /opt/homebrew/bin/python3.10 \
+        /usr/local/bin/python3.13   /usr/local/bin/python3.12 \
+        /usr/local/bin/python3.11   /usr/local/bin/python3.10 \
+        /opt/anaconda3/bin/python3.12 /opt/anaconda3/bin/python3.11 \
+        /opt/anaconda3/bin/python3.10 \
+        python3
+    do
+        if command -v "$cand" >/dev/null 2>&1 || [ -x "$cand" ]; then
+            ver_ok="$("$cand" -c 'import sys; print(1 if sys.version_info >= (3,10) else 0)' 2>/dev/null || echo 0)"
+            if [ "$ver_ok" = "1" ]; then
+                echo "$cand"
+                return
+            fi
+        fi
+    done
+    echo "python3"   # fall back; will fail loudly below if too old
+}
+
+NNI_PY="$(_pick_python)"
 
 # nnInteractive dependency pin: their docs warn PyTorch 2.9.0 has an OOM bug,
 # so we cap below it. nnInteractive itself requires torch>=2.6.
@@ -45,7 +74,15 @@ log "Models:     $NNI_MODEL_DIR"
 log "Model:      $NNI_MODEL_NAME"
 log "Python:     $NNI_PY"
 
-command -v "$NNI_PY" >/dev/null 2>&1 || die "Python not found: $NNI_PY"
+command -v "$NNI_PY" >/dev/null 2>&1 || [ -x "$NNI_PY" ] \
+    || die "Python not found: $NNI_PY"
+
+# Hard requirement check: nnInteractive >= 1.1 needs Python 3.10+
+PY_VER_OK="$("$NNI_PY" -c 'import sys; print(1 if sys.version_info >= (3,10) else 0)')"
+if [ "$PY_VER_OK" != "1" ]; then
+    die "Selected Python ($NNI_PY) is < 3.10. nnInteractive >= 1.1 requires 3.10+. Set NNINTERACTIVE_PY to a newer interpreter, e.g. /opt/homebrew/bin/python3.12 or /opt/anaconda3/bin/python3.12."
+fi
+log "Selected Python: $NNI_PY ($("$NNI_PY" --version))"
 
 if [ "$NNI_FORCE" = "1" ] && [ -d "$NNI_HOME" ]; then
     log "NNINTERACTIVE_FORCE=1 — removing existing venv at $NNI_HOME"
@@ -127,6 +164,33 @@ fi
 # Optional: install Pillow for screenshot rendering used by nninteractive_segment.py
 pip install --quiet "Pillow>=10.0" "matplotlib>=3.7" || true
 
+# OpenAI Python SDK is required by nninteractive_loop.py to call the vision
+# model. The loop has a raw-urllib fallback, but that path is brittle and
+# error reporting is limited; the SDK gives proper retries and rich errors.
+if python -c "import openai" >/dev/null 2>&1; then
+    log "openai already installed: $(python -c 'import openai; print(openai.__version__)')"
+else
+    log "Installing openai (Python SDK for the vision LLM)"
+    pip install --quiet "openai>=1.40"
+fi
+
+# ---------------------------------------------------------------------------
+# 3b. Install Slicer-free voxelization stack (VTK + trimesh)
+#
+# The comparison harness can voxelize the GT mesh onto the CT grid without
+# launching 3D Slicer (avoids GUI Qt platform-plugin crashes when the runner
+# isn't in an Aqua bootstrap). VTK provides vtkPolyDataToImageStencil; trimesh
+# is a robust fallback bbox/mesh reader.
+# ---------------------------------------------------------------------------
+
+if python -c "import vtk" >/dev/null 2>&1; then
+    log "vtk already installed: $(python -c 'import vtk; print(vtk.vtkVersion.GetVTKVersion())')"
+else
+    log "Installing vtk + trimesh (for Slicer-free voxelization)"
+    pip install --quiet "vtk>=9.2" "trimesh>=4.0"
+fi
+pip install --quiet "trimesh>=4.0" || true
+
 # ---------------------------------------------------------------------------
 # 4. Pre-download model weights
 # ---------------------------------------------------------------------------
@@ -138,9 +202,10 @@ if [ -d "$NNI_MODEL_DIR/$NNI_MODEL_NAME" ] && \
     log "Model weights already present at $NNI_MODEL_DIR/$NNI_MODEL_NAME"
 else
     log "Downloading $NNI_MODEL_NAME from HuggingFace (~400MB)..."
-    python - <<PY
+    NNI_MODEL_DIR="$NNI_MODEL_DIR" NNI_MODEL_NAME="$NNI_MODEL_NAME" \
+    python - <<'PY'
 from huggingface_hub import snapshot_download
-import os, sys
+import os
 target = os.environ["NNI_MODEL_DIR"]
 name = os.environ["NNI_MODEL_NAME"]
 path = snapshot_download(
@@ -176,6 +241,16 @@ except Exception as exc:
 try:
     import SimpleITK as sitk
     info["SimpleITK"] = sitk.Version_VersionString()
+except Exception:
+    pass
+try:
+    import vtk
+    info["vtk"] = vtk.vtkVersion.GetVTKVersion()
+except Exception:
+    pass
+try:
+    import trimesh
+    info["trimesh"] = trimesh.__version__
 except Exception:
     pass
 print(json.dumps(info, indent=2))
