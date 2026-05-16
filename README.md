@@ -50,6 +50,7 @@ Research Topic + Seed Media ID/List
 | `media_id` | | MorphoSource media ID to seed research (e.g. `000769445`) |
 | `media_list_id` | | MorphoSource media list ID for batch seeding (e.g. `000656244`) |
 | `openai_model` | gpt-5.4 | OpenAI model to use |
+| `run_integrity_verifier` | true | Chain the Plato's-Cave integrity verifier after the run |
 
 ## Required Secrets
 
@@ -90,6 +91,21 @@ Configure in **Settings > Secrets and variables > Actions**:
 - Flask app at `http://localhost:5001` on the Mac mini
 - Live-updating event log with cycle-by-cycle progress
 - Score trends, query history, knowledge graph stats
+
+### MorphoDepot Integrity Verifier (Plato's Cave)
+- Runs automatically after every AutoResearchClaw run (toggleable)
+- Builds a Plato's-Cave-style trust DAG over the run's GitHub issues
+- Five MVP verifier agents: metadata, file, lineage, AI QC, expert
+- Six per-metric scores propagate parent → child via a "trust gate"
+- Produces a MorphoDepot Integrity Report comment with three release
+  scores: `scientific_validity`, `ai_training_validity`,
+  `commercial_release_validity`
+- Status badge labels the issue (`integrity-verified`,
+  `integrity-conditionally_verified`, `integrity-needs_review`,
+  `integrity-rejected`)
+- Re-run any time by commenting `/verify` on a tracking issue
+- See [`docs/INTEGRITY_VERIFIER.md`](docs/INTEGRITY_VERIFIER.md) for
+  the full methodology, ontology, and calibration TODO
 
 ## Self-Hosted Runner
 
@@ -146,8 +162,12 @@ python dashboard.py
     program.md               # Research strategy (Karpathy-style)
     query_formatter.py       # Natural language to API URL converter
     morphosource_api.py      # MorphoSource API search handler
+    integrity_graph.py       # Plato's-Cave DAG, scoring, trust propagation
+    integrity_verifiers.py   # Five MVP verifier agents
+    verify_research_run.py   # Post-run integrity verification entry point
   workflows/
     autoresearchclaw.yml     # Main research workflow
+    verify_research_run.yml  # Integrity verifier (chained after run + on /verify)
     tests.yml                # CI tests
     code-quality.yml         # Linting and formatting
     parse_morphosource.yml   # CSV comparison workflow

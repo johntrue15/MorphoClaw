@@ -41,6 +41,11 @@ on:
         required: false
         type: string
         default: 'gpt-5.4'
+      run_integrity_verifier:
+        description: 'Run the Plato''s-Cave integrity verifier after the run completes'
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   create-research-issue:
@@ -272,3 +277,46 @@ jobs:
               issue_number: issueNumber,
               labels: labels,
             }), 'set-labels');
+
+  trigger-integrity-verifier:
+    name: Trigger Plato's-Cave Integrity Verifier
+    runs-on: ubuntu-latest
+    needs: [create-research-issue, research-pipeline]
+    if: always() && inputs.run_integrity_verifier && needs.create-research-issue.outputs.issue_number != ''
+    permissions:
+      issues: write
+      contents: read
+      actions: write
+
+    steps:
+      - name: Dispatch verify_research_run workflow
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const issueNumber = '${{ needs.create-research-issue.outputs.issue_number }}';
+            try {
+              // Try to dispatch the dedicated verifier workflow first.
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                workflow_id: 'verify_research_run.yml',
+                ref:   context.ref || 'main',
+                inputs: {
+                  issue_number: issueNumber,
+                  use_llm: 'true',
+                  dry_run: 'false',
+                },
+              });
+              console.log(`Dispatched verify_research_run.yml for issue #${issueNumber}`);
+            } catch (err) {
+              // Fall back to posting "/verify" so the issue_comment trigger
+              // picks it up.  This works even if the workflow_dispatch path
+              // is not yet enabled on a fresh fork.
+              console.log(`workflow_dispatch failed (${err.message}); falling back to /verify comment`);
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                issue_number: parseInt(issueNumber, 10),
+                body: '/verify',
+              });
+            }

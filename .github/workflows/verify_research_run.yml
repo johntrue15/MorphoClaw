@@ -1,0 +1,194 @@
+name: Verify Research Run
+
+# Plato's-Cave-style integrity verification of an AutoResearchClaw run.
+#
+# Trigger paths:
+#   1. workflow_dispatch  -- run manually against any tracking issue
+#   2. workflow_run       -- chained automatically after AutoResearchClaw
+#                           Agent completes (success or failure)
+#   3. issue_comment      -- a maintainer posts "/verify" on a tracking
+#                           issue to re-run the integrity DAG
+#
+# The job builds a Plato's-Cave-style integrity DAG over the issue and
+# its child issues, runs the five MVP verifier agents, propagates trust,
+# and posts the resulting MorphoDepot Integrity Report back as a comment.
+
+concurrency:
+  group: verify-research-${{ github.event.inputs.issue_number || github.event.workflow_run.id || github.event.issue.number }}
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Parent tracking issue number to verify'
+        required: true
+        type: string
+      child_issues:
+        description: 'Comma-separated child issue numbers (optional; auto-discovered otherwise)'
+        required: false
+        type: string
+        default: ''
+      use_llm:
+        description: 'Use LLM for AI-QC scoring (otherwise heuristic only)'
+        required: false
+        type: boolean
+        default: true
+      dry_run:
+        description: 'Print integrity report instead of posting it as a comment'
+        required: false
+        type: boolean
+        default: false
+
+  workflow_run:
+    workflows: ['AutoResearchClaw Agent']
+    types: [completed]
+
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  verify:
+    name: Build Integrity DAG and Score
+    # Skip noisy comment events that aren't /verify on an issue.
+    if: |
+      github.event_name != 'issue_comment' ||
+      (
+        github.event.issue && !github.event.issue.pull_request &&
+        startsWith(github.event.comment.body, '/verify')
+      )
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Resolve issue number
+        id: resolve
+        uses: actions/github-script@v8
+        with:
+          script: |
+            // workflow_dispatch -> input
+            // issue_comment    -> issue number
+            // workflow_run     -> last issue created with research-program label
+            const event = context.eventName;
+            let issueNumber = '';
+            let childIssues = '';
+            let useLlm = 'true';
+            let dryRun = 'false';
+
+            if (event === 'workflow_dispatch') {
+              issueNumber = `${{ github.event.inputs.issue_number }}`;
+              childIssues = `${{ github.event.inputs.child_issues }}`;
+              useLlm = `${{ github.event.inputs.use_llm }}`;
+              dryRun = `${{ github.event.inputs.dry_run }}`;
+            } else if (event === 'issue_comment') {
+              issueNumber = `${context.payload.issue.number}`;
+              const body = (context.payload.comment.body || '').trim();
+              const m = body.match(/^\/verify(?:\s+(.+))?$/);
+              if (m && m[1]) {
+                // Allow /verify 224,225 or /verify --no-llm
+                const args = m[1].trim();
+                if (/^[\d,\s]+$/.test(args)) childIssues = args.replace(/\s+/g, '');
+                if (/--no-llm/.test(args)) useLlm = 'false';
+                if (/--dry-run/.test(args)) dryRun = 'true';
+              }
+            } else if (event === 'workflow_run') {
+              // Find the most recent open research-program issue.  This is
+              // a best-effort: maintainers can always re-run with a /verify
+              // comment if the wrong issue is picked.
+              const list = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                labels: 'research-program',
+                state:  'all',
+                sort:   'created',
+                direction: 'desc',
+                per_page: 1,
+              });
+              if (list.data.length > 0) {
+                issueNumber = `${list.data[0].number}`;
+              }
+            }
+
+            core.setOutput('issue_number', issueNumber);
+            core.setOutput('child_issues', childIssues);
+            core.setOutput('use_llm', useLlm);
+            core.setOutput('dry_run', dryRun);
+
+            console.log(`event=${event} issue=${issueNumber} ` +
+                        `children=[${childIssues}] llm=${useLlm} dry=${dryRun}`);
+
+      - name: Skip if no issue resolved
+        if: steps.resolve.outputs.issue_number == ''
+        run: |
+          echo "::notice::No tracking issue resolved; skipping integrity verification."
+          exit 0
+
+      - name: Set up Python
+        if: steps.resolve.outputs.issue_number != ''
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        if: steps.resolve.outputs.issue_number != ''
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests python-dotenv openai
+
+      - name: Run integrity verifier
+        id: verify
+        if: steps.resolve.outputs.issue_number != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MORPHOSOURCE_API_KEY: ${{ secrets.MORPHOSOURCE_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4' }}
+        working-directory: .github/scripts
+        run: |
+          ARGS="--issue ${{ steps.resolve.outputs.issue_number }} --repo ${{ github.repository }}"
+          if [ -n "${{ steps.resolve.outputs.child_issues }}" ]; then
+            ARGS="$ARGS --child-issues ${{ steps.resolve.outputs.child_issues }}"
+          fi
+          if [ "${{ steps.resolve.outputs.use_llm }}" != "true" ]; then
+            ARGS="$ARGS --no-llm"
+          fi
+          if [ "${{ steps.resolve.outputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          ARGS="$ARGS --out-json integrity_report.json"
+          echo "Running: python verify_research_run.py $ARGS"
+          set +e
+          python verify_research_run.py $ARGS
+          STATUS=$?
+          set -e
+          echo "verifier_exit_code=$STATUS" >> "$GITHUB_OUTPUT"
+          # Exit 0 even on "needs_review"; we communicate via the comment
+          # and via the GHA outputs/labels rather than failing the job.
+          if [ "$STATUS" -gt 1 ]; then exit "$STATUS"; fi
+
+      - name: Upload integrity artifacts
+        if: always() && steps.resolve.outputs.issue_number != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: integrity-report-${{ steps.resolve.outputs.issue_number }}
+          path: |
+            .github/scripts/integrity_report.json
+          if-no-files-found: warn
+
+      - name: Job summary
+        if: always() && steps.resolve.outputs.issue_number != ''
+        run: |
+          echo "## MorphoDepot Integrity Verification" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Issue: #${{ steps.resolve.outputs.issue_number }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Status: \`${{ steps.verify.outputs.integrity_status || 'unknown' }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Scientific validity: ${{ steps.verify.outputs.scientific_validity || 'n/a' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- AI training validity: ${{ steps.verify.outputs.ai_training_validity || 'n/a' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Commercial release validity: ${{ steps.verify.outputs.commercial_release_validity || 'n/a' }}" >> "$GITHUB_STEP_SUMMARY"
