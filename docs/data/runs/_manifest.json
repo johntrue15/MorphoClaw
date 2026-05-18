@@ -1,4 +1,86 @@
 {
-  "runs": [],
-  "note": "Auto-managed by docs/scripts/merge_graphs.py. Each entry: {file, generated_at, stats, run_id, run_url}."
+  "runs": [
+    {
+      "file": "2026-03-23T16-27-01Z.json",
+      "generated_at": "2026-05-18T18:43:00Z",
+      "stats": {
+        "media": 586,
+        "specimens": 408,
+        "papers": 146,
+        "institutions": 65,
+        "taxa": 164,
+        "media_lists": 1,
+        "total_nodes": 1370,
+        "total_edges": 2737
+      },
+      "run_id": "20260323_161449_primate_skull_morphology_comparative_ana",
+      "local_run_id": "20260323_161449_primate_skull_morphology_comparative_ana",
+      "github_run_id": "",
+      "run_url": "",
+      "topic": "Primate skull morphology comparative analysis across MorphoSource collections",
+      "hash": "1fb904ea2b6e"
+    },
+    {
+      "file": "2026-03-23T17-55-40Z.json",
+      "generated_at": "2026-05-18T18:43:00Z",
+      "stats": {
+        "media": 2371,
+        "specimens": 1294,
+        "papers": 486,
+        "institutions": 179,
+        "taxa": 579,
+        "media_lists": 1,
+        "total_nodes": 4910,
+        "total_edges": 9782
+      },
+      "run_id": "20260323_163629_lets_develop_a_follow_up_research_paper",
+      "local_run_id": "20260323_163629_lets_develop_a_follow_up_research_paper",
+      "github_run_id": "",
+      "run_url": "",
+      "topic": "Lets develop a follow up research paper to this one Primate Phenotypes A Multi-Institution Collection of 3D Morphological Data Housed in MorphoSource",
+      "hash": "694273e425dc"
+    },
+    {
+      "file": "2026-03-23T23-04-30Z.json",
+      "generated_at": "2026-05-18T18:43:00Z",
+      "stats": {
+        "media": 1745,
+        "specimens": 853,
+        "papers": 313,
+        "institutions": 182,
+        "taxa": 516,
+        "media_lists": 0,
+        "total_nodes": 3609,
+        "total_edges": 5332
+      },
+      "run_id": "20260323_202413_lets_develop_a_follow_up_research_paper",
+      "local_run_id": "20260323_202413_lets_develop_a_follow_up_research_paper",
+      "github_run_id": "",
+      "run_url": "",
+      "topic": "Lets develop a follow up research paper to this one Primate Phenotypes A Multi-Institution Collection of 3D Morphological Data Housed in MorphoSource",
+      "hash": "c66b0c88cd01"
+    },
+    {
+      "file": "2026-05-12T19-57-03Z.json",
+      "generated_at": "2026-05-18T18:43:00Z",
+      "stats": {
+        "media": 412,
+        "specimens": 198,
+        "papers": 47,
+        "institutions": 59,
+        "taxa": 163,
+        "media_lists": 0,
+        "total_nodes": 879,
+        "total_edges": 1192
+      },
+      "run_id": "20260512_192348_show_me_lizard_data_from_texas",
+      "local_run_id": "20260512_192348_show_me_lizard_data_from_texas",
+      "github_run_id": "",
+      "run_url": "",
+      "topic": "Show me lizard data from Texas",
+      "hash": "9e85309fc3a8"
+    }
+  ],
+  "generated_at": "2026-05-18T18:43:00Z",
+  "count": 4
 }

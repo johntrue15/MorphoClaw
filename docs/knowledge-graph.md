@@ -88,9 +88,15 @@ publishes a new snapshot.
   </div>
 </div>
 
-<script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js"
-        integrity="sha384-A8YulRDtZUw2hKgQz6S1Wp+S5AfFsXxRkudIJjbCQ+nUFnY7AZyaqi0+yC0pTBxw"
-        crossorigin="anonymous"></script>
+<!--
+  vis-network is loaded by docs/assets/js/knowledge-graph.js itself.
+  The script computes its own URL (via document.currentScript.src) and
+  loads the locally-vendored copy at
+  docs/assets/vendor/vis-network/vis-network.min.js, falling back to a
+  public CDN only if the vendored copy is unreachable. This means the
+  viewer works regardless of the docs site's base URL (gh-pages subpath,
+  preview deployments, offline mirrors, etc.).
+-->
 
 !!! tip "How the graph stays live"
     After every AutoResearchClaw run, the workflow runs `docs/scripts/merge_graphs.py`,

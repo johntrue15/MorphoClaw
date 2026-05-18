@@ -55,12 +55,11 @@ as a GitHub issue with the right labels so the automation actually runs.
 </form>
 
 <div class="arc-examples">
-  <strong>Example queries (click to insert):</strong>
-  <ul>
-    <li onclick="arcQuerySet('Tell me about lizard specimens')">Tell me about lizard specimens</li>
-    <li onclick="arcQuerySet('How many snake specimens are available?')">How many snake specimens are available?</li>
-    <li onclick="arcQuerySet('Show me CT scans of crocodiles')">Show me CT scans of crocodiles</li>
-    <li onclick="arcQuerySet('Compare cranial morphology across primate species')">Compare cranial morphology across primate species</li>
+  <strong>Example queries (real research runs &mdash; click to insert, or view the knowledge graph it produced):</strong>
+  <ul id="arcExampleList">
+    <!-- Populated from arcExamples below so the "View graph" link stays in
+         sync with whatever queries we expose. Each example is wired to a
+         real snapshot in docs/data/runs/ via ?run=<file>. -->
   </ul>
 </div>
 
@@ -118,18 +117,39 @@ as a GitHub issue with the right labels so the automation actually runs.
   margin: 0.5rem 0 0 0;
 }
 .arc-examples li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
   padding: 0.5rem 0.75rem;
   margin: 0.25rem 0;
   background: var(--md-default-bg-color);
   border: 1px solid var(--md-default-fg-color--lightest);
   border-radius: 6px;
-  cursor: pointer;
-  transition: transform 0.15s ease, background 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 .arc-examples li:hover {
-  transform: translateX(3px);
+  border-color: var(--md-primary-fg-color);
+}
+.arc-examples .arc-example-text {
+  flex: 1;
+  cursor: pointer;
+}
+.arc-examples .arc-example-graph {
+  font-size: 0.85em;
+  padding: 0.25rem 0.6rem;
+  border-radius: 5px;
   background: var(--md-primary-fg-color);
-  color: var(--md-primary-bg-color);
+  color: var(--md-primary-bg-color) !important;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.arc-examples .arc-example-graph:hover {
+  filter: brightness(1.1);
+}
+.arc-examples .arc-example-stats {
+  font-size: 0.78em;
+  color: var(--md-default-fg-color--light);
+  margin-left: 0.25rem;
 }
 .arc-status {
   margin-top: 1rem;
@@ -154,6 +174,90 @@ as a GitHub issue with the right labels so the automation actually runs.
   const GITHUB_OWNER = "johntrue15";
   const GITHUB_REPO = "MorphoClaw";
   const NEW_ISSUE_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/issues/new`;
+
+  // Curated example queries. Each one is a *real* prompt that produced
+  // a knowledge graph already committed under docs/data/runs/. The
+  // `match` field is used to search the manifest entry; it can be the
+  // exact filename (preferred) or a substring of the topic / local_run_id.
+  const EXAMPLES = [
+    {
+      query: "Show me lizard data from Texas",
+      match: "show_me_lizard_data_from_texas",
+      blurb: "Squamate specimens & CT media from Texas collections",
+    },
+    {
+      query: "Primate skull morphology comparative analysis across MorphoSource collections",
+      match: "primate_skull_morphology",
+      blurb: "Cross-collection cranial CT comparison",
+    },
+    {
+      query: "Lets develop a follow up research paper to this one Primate Phenotypes A Multi-Institution Collection of 3D Morphological Data Housed in MorphoSource",
+      match: "20260323_202413_lets_develop_a_follow_up_research_paper",
+      blurb: "Follow-up to the Primate Phenotypes paper (refined run)",
+    },
+  ];
+
+  function escapeAttr(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;");
+  }
+
+  // The query page lives at <root>/query/, so the docs site root is one
+  // directory up. We need to resolve the manifest against that root (not
+  // against the current page) because docs/data/ ships at the site root.
+  async function loadManifest() {
+    try {
+      const here = new URL(".", document.baseURI || window.location.href);
+      const manifestUrl = new URL("../data/runs/_manifest.json", here).toString();
+      const res = await fetch(manifestUrl, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      console.warn("[query] Could not load manifest:", err);
+      return { runs: [] };
+    }
+  }
+
+  function matchManifestEntry(manifest, needle) {
+    if (!manifest || !Array.isArray(manifest.runs)) return null;
+    const lowered = String(needle || "").toLowerCase();
+    return (
+      manifest.runs.find(
+        (r) =>
+          r.file === needle ||
+          (r.topic && r.topic.toLowerCase().includes(lowered)) ||
+          (r.local_run_id && r.local_run_id.toLowerCase().includes(lowered)) ||
+          (r.run_id && r.run_id.toLowerCase().includes(lowered)),
+      ) || null
+    );
+  }
+
+  async function renderExamples() {
+    const list = document.getElementById("arcExampleList");
+    if (!list) return;
+    const manifest = await loadManifest();
+    const html = EXAMPLES.map((ex) => {
+      const entry = matchManifestEntry(manifest, ex.match);
+      const stats =
+        entry && entry.stats
+          ? `${entry.stats.total_nodes || 0} nodes &middot; ${entry.stats.total_edges || 0} edges`
+          : "";
+      const kgHref = entry
+        ? `knowledge-graph/?run=${encodeURIComponent(entry.file)}`
+        : "knowledge-graph/";
+      const blurb = ex.blurb ? `<br/><small class="arc-example-stats">${escapeAttr(ex.blurb)}${stats ? " &middot; " + stats : ""}</small>` : (stats ? `<small class="arc-example-stats">${stats}</small>` : "");
+      return (
+        `<li>` +
+          `<span class="arc-example-text" onclick="arcQuerySet(${JSON.stringify(ex.query)})">${escapeAttr(ex.query)}${blurb}</span>` +
+          `<a class="arc-example-graph" href="../${kgHref}" title="Open the live knowledge graph for this query">View graph &rarr;</a>` +
+        `</li>`
+      );
+    }).join("");
+    list.innerHTML = html;
+  }
+  renderExamples();
   // These labels match what .github/workflows/on-request-opened.yml expects.
   // Without them the issue is created but no automation runs.
   const ISSUE_LABELS = [

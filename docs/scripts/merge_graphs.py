@@ -1,21 +1,32 @@
 #!/usr/bin/env python3
-"""Publish the latest AutoResearchClaw knowledge-graph JSON into ``docs/data/``.
+"""Publish AutoResearchClaw knowledge-graph JSON snapshots into ``docs/data/``.
 
 This is invoked by the ``Publish knowledge graph snapshot`` step in
 ``.github/workflows/autoresearchclaw.yml`` after every run on the self-hosted
 runner. It is also safe to call locally::
 
+    # Default: publish just the most recent snapshot (per-run CI behaviour)
     python docs/scripts/merge_graphs.py \\
         --in  ~/.autoresearchclaw/graphs \\
         --out docs/data \\
         --run-id "$GITHUB_RUN_ID" \\
         --run-url "https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
+    # Backfill: publish *every* snapshot in --in (useful when wiring an
+    # existing runner's history into a fresh docs site)
+    python docs/scripts/merge_graphs.py --all \\
+        --in  ~/.autoresearchclaw/graphs \\
+        --logs ~/.autoresearchclaw/logs \\
+        --out docs/data
+
 What it does:
 
-* Reads every ``*.json`` file in ``--in`` and picks the most recent one
-  (by mtime). Skips files that don't have the expected node/edge shape.
-* Copies that snapshot into ``--out/runs/<ISO-timestamp>.json``.
+* Reads every ``*.json`` file in ``--in`` and either keeps the most recent
+  one (default) or keeps all of them (``--all``). Skips files that don't
+  have the expected node/edge shape.
+* Copies each kept snapshot into ``--out/runs/<ISO-timestamp>.json`` and
+  stamps it with the originating query/topic and run id (looked up in
+  ``<basename>_meta.json`` under ``--logs`` when available).
 * Updates ``--out/knowledge_graph.json`` to be the **union** of every
   snapshot in ``--out/runs/`` (de-duplicated by node id and by
   ``(source, target, relation)``).
@@ -179,10 +190,28 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Directory holding the per-run *.json files produced by knowledge_graph.py",
     )
     ap.add_argument(
+        "--logs",
+        dest="logs_dir",
+        default="~/.autoresearchclaw/logs",
+        help=(
+            "Directory holding the sibling *_meta.json files. Used to enrich "
+            "manifest entries with topic + run id. Default: ~/.autoresearchclaw/logs"
+        ),
+    )
+    ap.add_argument(
         "--out",
         dest="output_dir",
         default="docs/data",
         help="Destination directory inside the docs site (default: docs/data)",
+    )
+    ap.add_argument(
+        "--all",
+        action="store_true",
+        help=(
+            "Publish every snapshot in --in (backfill mode), not just the most "
+            "recent one. Useful when wiring an existing runner's history into "
+            "a fresh docs site."
+        ),
     )
     ap.add_argument(
         "--run-id",
@@ -213,6 +242,41 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return ap.parse_args(argv)
 
 
+def _lookup_meta(logs_dir: Path, graph_path: Path) -> Dict[str, Any]:
+    """Best-effort lookup of the sibling ``*_meta.json`` log for a graph file."""
+
+    stem = graph_path.stem
+    # Graph file names look like "<timestamp>_<slug>_graph". Meta companions
+    # are named "<timestamp>_<slug>_meta.json". When the graph stem doesn't
+    # end in "_graph" we still try the same stem.
+    candidate_stems = []
+    if stem.endswith("_graph"):
+        candidate_stems.append(stem[: -len("_graph")] + "_meta")
+    candidate_stems.append(stem + "_meta")
+    candidate_stems.append(stem)
+
+    for s in candidate_stems:
+        candidate = logs_dir / f"{s}.json"
+        if candidate.exists():
+            payload = _safe_load_json(candidate)
+            if isinstance(payload, dict):
+                return payload
+    return {}
+
+
+def _humanise_filename_topic(graph_path: Path) -> str:
+    """Fallback topic derived from the filename when no meta sidecar exists."""
+
+    stem = graph_path.stem
+    if stem.endswith("_graph"):
+        stem = stem[: -len("_graph")]
+    parts = stem.split("_")
+    # Strip the leading "YYYYMMDD_HHMMSS_" if present.
+    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+        parts = parts[2:]
+    return " ".join(parts).strip().capitalize() or stem
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     import os
 
@@ -223,6 +287,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     input_dir = Path(args.input_dir).expanduser()
+    logs_dir = Path(args.logs_dir).expanduser() if args.logs_dir else None
     output_dir = Path(args.output_dir).expanduser()
     runs_dir = output_dir / "runs"
     runs_dir.mkdir(parents=True, exist_ok=True)
@@ -232,41 +297,80 @@ def main(argv: Optional[List[str]] = None) -> int:
         log.info("No graph snapshots found in %s; nothing to publish.", input_dir)
         return 0
 
-    latest = snapshots[-1]
-    iso = _stable_iso_for_mtime(latest.mtime)
-    target_name = f"{iso}.json"
-    target_path = runs_dir / target_name
+    publish_list = snapshots if args.all else [snapshots[-1]]
+    log.info(
+        "Publishing %d snapshot(s) from %s (--all=%s).",
+        len(publish_list),
+        input_dir,
+        args.all,
+    )
 
-    # Avoid re-committing identical content.
-    new_hash = _hash_payload(latest.payload)
-    existing = _safe_load_json(target_path) if target_path.exists() else None
-    if existing and _hash_payload(existing) == new_hash:
-        log.info("Snapshot %s already up to date (hash %s).", target_name, new_hash)
-    else:
-        # Stamp the payload with provenance so the docs page can show it.
-        run_id = args.run_id or os.environ.get("GITHUB_RUN_ID", "")
-        run_url = args.run_url or (
-            f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{run_id}"
-            if run_id and os.environ.get("GITHUB_REPOSITORY")
-            else ""
+    default_run_id = args.run_id or os.environ.get("GITHUB_RUN_ID", "")
+    default_repo = os.environ.get("GITHUB_REPOSITORY", "johntrue15/MorphoClaw")
+
+    for snap in publish_list:
+        iso = _stable_iso_for_mtime(snap.mtime)
+        target_name = f"{iso}.json"
+        target_path = runs_dir / target_name
+
+        # Avoid rewriting identical content.
+        new_hash = _hash_payload(snap.payload)
+        existing = _safe_load_json(target_path) if target_path.exists() else None
+        if existing and _hash_payload(existing) == new_hash:
+            log.info("Snapshot %s already up to date (hash %s).", target_name, new_hash)
+            continue
+
+        meta = _lookup_meta(logs_dir, snap.path) if logs_dir else {}
+        topic = (
+            args.topic
+            or meta.get("topic")
+            or meta.get("query")
+            or _humanise_filename_topic(snap.path)
         )
-        payload = dict(latest.payload)
+        # Two distinct identifiers: the GitHub Actions numeric run id (which
+        # we can deep-link to) and the local pipeline run id (a human slug,
+        # only meaningful inside the runner). Keep them separate so the
+        # manifest doesn't fabricate broken URLs.
+        local_run_id = str(meta.get("run_id") or "").strip()
+        gh_run_id = (
+            default_run_id
+            or str(meta.get("github_run_id") or "").strip()
+        )
+        if gh_run_id and not gh_run_id.isdigit():
+            # Looks like a local slug masquerading as a GH run id — ignore it.
+            gh_run_id = ""
+
+        if args.run_url:
+            run_url = args.run_url
+        elif gh_run_id:
+            run_url = f"https://github.com/{default_repo}/actions/runs/{gh_run_id}"
+        else:
+            run_url = ""
+
+        run_id = gh_run_id or local_run_id
+
+        payload = dict(snap.payload)
         payload["generated_at"] = _now_iso()
         if "stats" not in payload or not isinstance(payload["stats"], dict):
             payload["stats"] = _stats_from(payload)
         payload["source"] = {
-            "file": latest.path.name,
+            "file": snap.path.name,
             "run_id": run_id,
+            "local_run_id": local_run_id,
+            "github_run_id": gh_run_id,
             "run_url": run_url,
-            "topic": args.topic,
+            "topic": topic,
             "hash": new_hash,
         }
-        target_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        target_path.write_text(
+            json.dumps(payload, indent=2, default=str), encoding="utf-8"
+        )
         log.info(
-            "Wrote per-run snapshot %s (%d nodes, %d edges, hash %s).",
+            "Wrote per-run snapshot %s (%d nodes, %d edges, topic=%r, hash %s).",
             target_path,
             len(payload.get("nodes") or []),
             len(payload.get("edges") or []),
+            topic,
             new_hash,
         )
 
@@ -293,6 +397,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "generated_at": payload.get("generated_at"),
                 "stats": payload.get("stats") or _stats_from(payload),
                 "run_id": src.get("run_id", ""),
+                "local_run_id": src.get("local_run_id", ""),
+                "github_run_id": src.get("github_run_id", ""),
                 "run_url": src.get("run_url", ""),
                 "topic": src.get("topic", ""),
                 "hash": src.get("hash"),

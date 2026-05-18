@@ -8,11 +8,43 @@
  * so the look matches the per-run artifact HTML.
  *
  * Self-contained — no MkDocs-specific globals — and gracefully no-ops on
- * any page that doesn't include the #kg-app container.
+ * any page that doesn't include the #kg-app container. vis-network itself
+ * is loaded lazily from a locally-vendored bundle (with a CDN fallback)
+ * so this script also works on pages served from a project sub-path.
  */
 
 (function () {
   "use strict";
+
+  // Captured at script-parse time so it survives async work below.
+  // document.currentScript is the <script src="..."> tag MkDocs emitted
+  // for assets/js/knowledge-graph.js, so its .src is an absolute URL we
+  // can use to derive sibling asset URLs without hard-coding any path.
+  const SELF_SCRIPT_URL = (function () {
+    try {
+      if (document.currentScript && document.currentScript.src) {
+        return document.currentScript.src;
+      }
+    } catch (_) { /* ignore */ }
+    return null;
+  })();
+
+  const VIS_NETWORK_CDN =
+    "https://cdn.jsdelivr.net/npm/vis-network@9.1.6/standalone/umd/vis-network.min.js";
+
+  function vendoredVisNetworkUrl() {
+    if (!SELF_SCRIPT_URL) return null;
+    try {
+      // SELF_SCRIPT_URL looks like .../assets/js/knowledge-graph.js
+      // We want   .../assets/vendor/vis-network/vis-network.min.js
+      return new URL(
+        "../vendor/vis-network/vis-network.min.js",
+        SELF_SCRIPT_URL
+      ).toString();
+    } catch (_) {
+      return null;
+    }
+  }
 
   const TYPE_COLORS = {
     Media: "#58a6ff",
@@ -31,10 +63,21 @@
     MediaList: "star",
   };
 
-  // Resolve data URLs relative to the page so we work under any subpath.
-  function dataUrl(name) {
+  // Resolve URLs against the site root, derived from this script's own URL.
+  // This script lives at <root>/assets/js/knowledge-graph.js, so two "../"
+  // jumps put us at the docs site root regardless of which page is loading
+  // us. Falls back to a window.location-relative URL for non-browser tests.
+  function siteRootUrl(relative) {
+    const cleaned = String(relative || "").replace(/^\/+/, "");
+    if (SELF_SCRIPT_URL) {
+      return new URL("../../" + cleaned, SELF_SCRIPT_URL).toString();
+    }
     const base = new URL(".", window.location.href);
-    const u = new URL(`data/${name}`, base);
+    return new URL(cleaned, base).toString();
+  }
+
+  function dataUrl(name) {
+    const u = new URL(siteRootUrl(`data/${name}`));
     u.searchParams.set("t", Date.now().toString());
     return u.toString();
   }
@@ -100,9 +143,11 @@
       ui.empty.hidden = false;
       ui.empty.innerHTML =
         "<h2>vis-network failed to load</h2>" +
-        "<p>The interactive viewer requires the <code>vis-network</code> CDN script. " +
-        "Check the network tab and your CSP, or download the JSON snapshot directly from " +
-        "<a href=\"data/knowledge_graph.json\">data/knowledge_graph.json</a>.</p>";
+        "<p>The interactive viewer requires the bundled <code>vis-network</code> script. " +
+        "The local copy at <code>assets/vendor/vis-network/vis-network.min.js</code> and the " +
+        "jsDelivr fallback both failed to load &mdash; check the browser network tab for the " +
+        "actual error (CSP, ad-blocker, or offline). You can still download the raw graph " +
+        "from <a href=\"" + dataUrl("knowledge_graph.json") + "\">data/knowledge_graph.json</a>.</p>";
       return;
     }
 
@@ -382,18 +427,75 @@
       }
     }
 
+    function shortTopic(topic, max = 70) {
+      if (!topic) return "";
+      const trimmed = topic.trim().replace(/\s+/g, " ");
+      return trimmed.length > max ? trimmed.slice(0, max - 1) + "…" : trimmed;
+    }
+
     function buildRunPicker(manifest) {
       const runs = (manifest && manifest.runs) || [];
       const opts = [
-        `<option value="${dataUrl("knowledge_graph.json")}">Cumulative (latest)</option>`,
+        `<option value="${dataUrl("knowledge_graph.json")}" data-run-file="" data-topic="Cumulative (latest)">Cumulative (latest)</option>`,
       ];
       for (const r of runs.slice().reverse()) {
-        const label = `${formatTimestamp(r.generated_at)} — ${r.run_id || r.file}`;
+        const topic = shortTopic(r.topic) || r.file;
+        const label = `${formatTimestamp(r.generated_at)} — ${topic}`;
+        const titleAttr = escapeHTML(
+          r.topic ||
+            r.run_id ||
+            r.file ||
+            "(unknown topic)",
+        );
         opts.push(
-          `<option value="${dataUrl(`runs/${r.file}`)}">${escapeHTML(label)}</option>`,
+          `<option value="${dataUrl(`runs/${r.file}`)}" ` +
+            `data-run-file="${escapeHTML(r.file)}" ` +
+            `data-topic="${escapeHTML(r.topic || "")}" ` +
+            `title="${titleAttr}">${escapeHTML(label)}</option>`,
         );
       }
       ui.runPicker.innerHTML = opts.join("");
+    }
+
+    function selectInitialRun(manifest) {
+      // Honour ?run=<file> in the URL so example-query deep links from the
+      // submission page jump straight to the relevant snapshot. Falls back to
+      // the cumulative graph when no match is found.
+      let target = state.currentDataUrl;
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const wanted = (params.get("run") || "").trim();
+        if (wanted) {
+          const runs = (manifest && manifest.runs) || [];
+          // Match by exact filename, by case-insensitive substring on topic,
+          // or by case-insensitive substring on the local run id slug.
+          const lowered = wanted.toLowerCase();
+          const hit = runs.find(
+            (r) =>
+              r.file === wanted ||
+              (r.topic && r.topic.toLowerCase().includes(lowered)) ||
+              (r.local_run_id && r.local_run_id.toLowerCase().includes(lowered)) ||
+              (r.run_id && r.run_id.toLowerCase().includes(lowered)),
+          );
+          if (hit) {
+            target = dataUrl(`runs/${hit.file}`);
+            // Pre-select in the picker once it's built.
+            const pickerVal = target;
+            setTimeout(() => {
+              const opt = Array.from(ui.runPicker.options).find(
+                (o) => o.value === pickerVal,
+              );
+              if (opt) ui.runPicker.value = pickerVal;
+            }, 0);
+          } else {
+            console.warn("[KG] ?run=%s did not match any snapshot.", wanted);
+          }
+        }
+      } catch (err) {
+        console.warn("[KG] Could not parse URL params:", err);
+      }
+      state.currentDataUrl = target;
+      return target;
     }
 
     async function loadAndRender(url) {
@@ -463,16 +565,69 @@
       ui.details.hidden = true;
     });
 
-    // Initial fetch: manifest first (for the run picker), then the cumulative graph.
+    // Initial fetch: manifest first (for the run picker), then the chosen
+    // snapshot (deep-linked via ?run=… when present, else the cumulative).
     fetchJSON(dataUrl("runs/_manifest.json"), { runs: [] }).then((manifest) => {
       buildRunPicker(manifest);
-      loadAndRender(state.currentDataUrl);
+      const initial = selectInitialRun(manifest);
+      loadAndRender(initial);
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // vis-network loader with CDN fallback.
+  //
+  // We don't depend on the page including an inline <script> tag for
+  // vis-network. Instead we compute the locally-vendored URL relative to
+  // *this* script and inject it ourselves. If that fails (network error,
+  // 404 during a partial deploy, etc.) we fall back to a public CDN.
+  // ---------------------------------------------------------------------------
+
+  function loadScript(src, { crossOrigin = false } = {}) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.async = false;
+      if (crossOrigin) s.crossOrigin = "anonymous";
+      s.onload = () => resolve(src);
+      s.onerror = () => reject(new Error(`Failed to load ${src}`));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function ensureVisNetwork() {
+    if (typeof vis !== "undefined" && vis.Network) return true;
+
+    const localUrl = vendoredVisNetworkUrl();
+    if (localUrl) {
+      try {
+        console.info("[KG] Loading vis-network from vendored bundle:", localUrl);
+        await loadScript(localUrl);
+        if (typeof vis !== "undefined" && vis.Network) return true;
+      } catch (err) {
+        console.warn("[KG] Vendored vis-network unreachable:", err);
+      }
+    }
+
+    try {
+      console.warn("[KG] Falling back to CDN vis-network:", VIS_NETWORK_CDN);
+      await loadScript(VIS_NETWORK_CDN, { crossOrigin: true });
+    } catch (err) {
+      console.error("[KG] CDN vis-network fallback failed:", err);
+      return false;
+    }
+    return typeof vis !== "undefined" && !!vis.Network;
+  }
+
+  function boot() {
+    // Only do work on pages that actually host the viewer.
+    if (!document.getElementById("kg-app")) return;
+    ensureVisNetwork().then(init);
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
+    document.addEventListener("DOMContentLoaded", boot);
   } else {
-    init();
+    boot();
   }
 })();

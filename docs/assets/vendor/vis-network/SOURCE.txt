@@ -1,0 +1,2 @@
+Vendored from https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js
+sha384-Ux6phic9PEHJ38YtrijhkzyJ8yQlH8i/+buBR8s3mAZOJrP1gwyvAcIYl3GWtpX1
