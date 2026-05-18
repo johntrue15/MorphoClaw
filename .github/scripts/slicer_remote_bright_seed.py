@@ -575,6 +575,13 @@ def main(argv: list[str] | None = None) -> int:
                    help="if a single click adds more than this fraction "
                         "of the total volume voxels to the mask, treat it "
                         "as runaway and stop (default 0.5)")
+    p.add_argument("--no-stop-rules", action="store_true",
+                   help="disable ALL early-stopping heuristics: always "
+                        "issue --max-steps clicks unless the bright "
+                        "candidate list is exhausted. Implemented as "
+                        "min_delta=0, patience=10**9, "
+                        "max_explosion_frac=1.0 — recorded that way in "
+                        "manifest.json so the run is reproducible.")
     p.add_argument("--no-new-segment-per-click", action="store_true",
                    help="put every click into the SAME segment (default: "
                         "each click after the first creates a fresh segment "
@@ -592,6 +599,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out-dir", type=Path,
                    default=Path("runs") / time.strftime("bright_%Y%m%d_%H%M%S"))
     args = p.parse_args(argv)
+
+    if args.no_stop_rules:
+        args.min_delta = 0
+        args.patience = 10 ** 9
+        args.max_explosion_frac = 1.0
 
     base_url = _read_url()
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -907,6 +919,8 @@ def main(argv: list[str] | None = None) -> int:
             replay_cmd.append(f'{flag} {val}')
     if args.reset_first:
         replay_cmd.append("--reset-first")
+    if args.no_stop_rules:
+        replay_cmd.append("--no-stop-rules")
     if args.no_new_segment_per_click:
         replay_cmd.append("--no-new-segment-per-click")
     if args.no_screenshots:
