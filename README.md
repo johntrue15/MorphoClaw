@@ -1,9 +1,9 @@
 # AutoResearchClaw
 
-[![License](https://img.shields.io/github/license/johntrue15/Metadata-to-Morphsource-compare?style=flat-square)](LICENSE)
-[![Tests](https://img.shields.io/github/actions/workflow/status/johntrue15/Metadata-to-Morphsource-compare/tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/johntrue15/Metadata-to-Morphsource-compare/actions/workflows/tests.yml)
-[![Code Quality](https://img.shields.io/github/actions/workflow/status/johntrue15/Metadata-to-Morphsource-compare/code-quality.yml?branch=main&label=code%20quality&style=flat-square)](https://github.com/johntrue15/Metadata-to-Morphsource-compare/actions/workflows/code-quality.yml)
-[![Docs](https://img.shields.io/github/actions/workflow/status/johntrue15/Metadata-to-Morphsource-compare/docs.yml?branch=main&label=docs&style=flat-square)](https://github.com/johntrue15/Metadata-to-Morphsource-compare/actions/workflows/docs.yml)
+[![License](https://img.shields.io/github/license/johntrue15/MorphoClaw?style=flat-square)](LICENSE)
+[![Tests](https://img.shields.io/github/actions/workflow/status/johntrue15/MorphoClaw/tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/johntrue15/MorphoClaw/actions/workflows/tests.yml)
+[![Code Quality](https://img.shields.io/github/actions/workflow/status/johntrue15/MorphoClaw/code-quality.yml?branch=main&label=code%20quality&style=flat-square)](https://github.com/johntrue15/MorphoClaw/actions/workflows/code-quality.yml)
+[![Docs](https://img.shields.io/github/actions/workflow/status/johntrue15/MorphoClaw/docs.yml?branch=main&label=docs&style=flat-square)](https://github.com/johntrue15/MorphoClaw/actions/workflows/docs.yml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue?style=flat-square)](https://www.python.org/)
 
 > An autonomous MorphoSource research agent inspired by [Karpathy's autoresearch](https://github.com/karpathy/autoresearch).
@@ -18,15 +18,15 @@ The full, professionally laid-out docs &mdash; with an **interactive
 knowledge graph that updates automatically after every research run** &mdash;
 live at:
 
-**[johntrue15.github.io/Metadata-to-Morphsource-compare/](https://johntrue15.github.io/Metadata-to-Morphsource-compare/)**
+**[johntrue15.github.io/MorphoClaw/](https://johntrue15.github.io/MorphoClaw/)**
 
 Start there for:
 
-- [**Quick Start**](https://johntrue15.github.io/Metadata-to-Morphsource-compare/quick-start/)
-- [**Submit a Query**](https://johntrue15.github.io/Metadata-to-Morphsource-compare/query/)
-- [**Live Knowledge Graph**](https://johntrue15.github.io/Metadata-to-Morphsource-compare/knowledge-graph/)
-- [**Architecture**](https://johntrue15.github.io/Metadata-to-Morphsource-compare/architecture/)
-- [**CLI / Workflows / Secrets reference**](https://johntrue15.github.io/Metadata-to-Morphsource-compare/reference/cli/)
+- [**Quick Start**](https://johntrue15.github.io/MorphoClaw/quick-start/)
+- [**Submit a Query**](https://johntrue15.github.io/MorphoClaw/query/)
+- [**Live Knowledge Graph**](https://johntrue15.github.io/MorphoClaw/knowledge-graph/)
+- [**Architecture**](https://johntrue15.github.io/MorphoClaw/architecture/)
+- [**CLI / Workflows / Secrets reference**](https://johntrue15.github.io/MorphoClaw/reference/cli/)
 
 ## Architecture at a glance
 
@@ -54,7 +54,7 @@ flowchart LR
     Outputs --> Verifier["MorphoDepot Integrity Verifier<br/>(Plato's Cave DAG)"]
 ```
 
-Read the [full architecture write-up](https://johntrue15.github.io/Metadata-to-Morphsource-compare/architecture/)
+Read the [full architecture write-up](https://johntrue15.github.io/MorphoClaw/architecture/)
 for the two-loop engine, knowledge-graph schema, iterative segmentation flow,
 and the integrity verifier's trust DAG.
 
@@ -76,7 +76,7 @@ python research_agent.py "Your research topic" \
 python dashboard.py  # http://localhost:5001
 ```
 
-Full CLI reference: <https://johntrue15.github.io/Metadata-to-Morphsource-compare/reference/cli/>.
+Full CLI reference: <https://johntrue15.github.io/MorphoClaw/reference/cli/>.
 
 ## Trigger from GitHub Actions
 
@@ -85,17 +85,17 @@ Full CLI reference: <https://johntrue15.github.io/Metadata-to-Morphsource-compar
    `media_id`, `media_list_id`, `openai_model`, `enable_nninteractive`, and
    `run_integrity_verifier`.
 3. Results post to a tracking issue. The
-   [live knowledge graph](https://johntrue15.github.io/Metadata-to-Morphsource-compare/knowledge-graph/)
+   [live knowledge graph](https://johntrue15.github.io/MorphoClaw/knowledge-graph/)
    refreshes automatically after each run.
 
-Full input matrix: <https://johntrue15.github.io/Metadata-to-Morphsource-compare/reference/workflows/>.
+Full input matrix: <https://johntrue15.github.io/MorphoClaw/reference/workflows/>.
 
 ## Required secrets
 
 - `OPENAI_API_KEY` &mdash; LLM calls (decompose, evaluate, synthesize).
 - `MORPHOSOURCE_API_KEY` &mdash; specimen downloads.
 
-Full secrets reference: <https://johntrue15.github.io/Metadata-to-Morphsource-compare/reference/secrets/>.
+Full secrets reference: <https://johntrue15.github.io/MorphoClaw/reference/secrets/>.
 
 ## Headline features
 
@@ -120,7 +120,7 @@ Full secrets reference: <https://johntrue15.github.io/Metadata-to-Morphsource-co
   comments back with results.
 
 Each of these is documented in depth on the
-[**docs site**](https://johntrue15.github.io/Metadata-to-Morphsource-compare/).
+[**docs site**](https://johntrue15.github.io/MorphoClaw/).
 
 ## Project structure (short)
 
@@ -134,7 +134,7 @@ Tests/                  # pytest suite (unit / integration / live tiers)
 ```
 
 Full tree with one-line descriptions per file:
-<https://johntrue15.github.io/Metadata-to-Morphsource-compare/reference/project-structure/>.
+<https://johntrue15.github.io/MorphoClaw/reference/project-structure/>.
 
 ## Self-hosted runner
 
@@ -157,12 +157,12 @@ bandit -r . -c pyproject.toml --exclude ./Tests,./tests,./.venv,./venv,./data --
 yamllint .github/
 ```
 
-See <https://johntrue15.github.io/Metadata-to-Morphsource-compare/reference/cli/>
+See <https://johntrue15.github.io/MorphoClaw/reference/cli/>
 for the full development workflow.
 
 ## Documentation
 
-- **Docs site**: <https://johntrue15.github.io/Metadata-to-Morphsource-compare/>
+- **Docs site**: <https://johntrue15.github.io/MorphoClaw/>
 - **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md)
 - **Changelog**: [CHANGELOG.md](CHANGELOG.md)
 - **Security**: [SECURITY.md](SECURITY.md)

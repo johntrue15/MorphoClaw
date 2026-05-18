@@ -1,6 +1,6 @@
 # Testing Guide
 
-This guide explains how to run and maintain tests for the Metadata-to-Morphsource-compare project.
+This guide explains how to run and maintain tests for the MorphoClaw project.
 
 ## Table of Contents
 - [Quick Start](#quick-start)
@@ -251,7 +251,7 @@ pip install -r requirements-test.txt
 
 Solution: Make sure you're running tests from the repository root:
 ```bash
-cd /path/to/Metadata-to-Morphsource-compare
+cd /path/to/MorphoClaw
 pytest tests/
 ```
 

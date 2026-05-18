@@ -1,5 +1,5 @@
 {
-  "run_id": "20260518T172818Z_mouse_skull_d534f1",
+  "run_id": "20260518T173505Z_mouse_skull_ff3a53",
   "volume_name": "IMPC_sample_data",
   "volume_sha256_voxels": "e9a958890f6529766f025feea9645e572ba218c73bda185262c40be5bdac5389",
   "shape_kji": [
@@ -14,7 +14,7 @@
   ],
   "threshold": 125.0,
   "n_candidates_initial": 50000,
-  "steps": 3,
+  "steps": 2,
   "history": [
     {
       "status": "ok",
@@ -31,15 +31,15 @@
       "click_positive": true,
       "skipped_inside": 0,
       "candidates_left": 49999,
-      "click_seconds": 0.763,
+      "click_seconds": 0.759,
       "made_new_segment": false,
       "segment_id": "Segment_1",
       "segment_voxels": 23814,
       "n_segments_before": 0,
       "n_segments_after": 1,
-      "_dt_s": 1.18,
+      "_dt_s": 1.163,
       "step": 0,
-      "step_wallclock_s": 1.18
+      "step_wallclock_s": 1.163
     },
     {
       "status": "ok",
@@ -56,40 +56,15 @@
       "click_positive": true,
       "skipped_inside": 107,
       "candidates_left": 49891,
-      "click_seconds": 0.986,
+      "click_seconds": 0.868,
       "made_new_segment": true,
       "segment_id": "Segment_2",
       "segment_voxels": 37157,
       "n_segments_before": 1,
       "n_segments_after": 2,
-      "_dt_s": 1.685,
+      "_dt_s": 1.525,
       "step": 1,
-      "step_wallclock_s": 1.685
-    },
-    {
-      "status": "ok",
-      "picked_ijk": [
-        156,
-        110,
-        168
-      ],
-      "intensity": 218.0,
-      "voxels_before": 60971,
-      "voxels_after": 151835,
-      "delta": 90864,
-      "new_voxels_at_picked": 1,
-      "click_positive": true,
-      "skipped_inside": 466,
-      "candidates_left": 49424,
-      "click_seconds": 1.031,
-      "made_new_segment": true,
-      "segment_id": "Segment_3",
-      "segment_voxels": 148653,
-      "n_segments_before": 2,
-      "n_segments_after": 3,
-      "_dt_s": 1.928,
-      "step": 2,
-      "step_wallclock_s": 1.928
+      "step_wallclock_s": 1.525
     }
   ],
   "args": {
@@ -97,20 +72,20 @@
     "reset_first": true,
     "intensity_percentile": 99.5,
     "max_candidates": 50000,
-    "max_steps": 3,
-    "min_delta": 200,
+    "max_steps": 2,
+    "min_delta": 50,
     "patience": 3,
     "max_explosion_frac": 0.4,
     "no_new_segment_per_click": false,
-    "no_screenshots": false,
+    "no_screenshots": true,
     "no_export_segmentation": false,
     "label": "mouse_skull",
     "out_dir": "runs/impc_telem"
   },
-  "final_voxel_count": 151835,
-  "final_voxel_fraction": 0.0054,
+  "final_voxel_count": 60971,
+  "final_voxel_fraction": 0.0022,
   "stop_reason": {
     "reason": "max_steps",
-    "max_steps": 3
+    "max_steps": 2
   }
 }

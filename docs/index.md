@@ -28,10 +28,10 @@ hide:
 
 <div class="arc-badges" markdown>
 
-[![License](https://img.shields.io/github/license/johntrue15/Metadata-to-Morphsource-compare?style=flat-square)](https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/LICENSE)
-[![Tests](https://img.shields.io/github/actions/workflow/status/johntrue15/Metadata-to-Morphsource-compare/tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/johntrue15/Metadata-to-Morphsource-compare/actions/workflows/tests.yml)
-[![Code Quality](https://img.shields.io/github/actions/workflow/status/johntrue15/Metadata-to-Morphsource-compare/code-quality.yml?branch=main&label=code%20quality&style=flat-square)](https://github.com/johntrue15/Metadata-to-Morphsource-compare/actions/workflows/code-quality.yml)
-[![Docs](https://img.shields.io/github/actions/workflow/status/johntrue15/Metadata-to-Morphsource-compare/docs.yml?branch=main&label=docs&style=flat-square)](https://github.com/johntrue15/Metadata-to-Morphsource-compare/actions/workflows/docs.yml)
+[![License](https://img.shields.io/github/license/johntrue15/MorphoClaw?style=flat-square)](https://github.com/johntrue15/MorphoClaw/blob/main/LICENSE)
+[![Tests](https://img.shields.io/github/actions/workflow/status/johntrue15/MorphoClaw/tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/johntrue15/MorphoClaw/actions/workflows/tests.yml)
+[![Code Quality](https://img.shields.io/github/actions/workflow/status/johntrue15/MorphoClaw/code-quality.yml?branch=main&label=code%20quality&style=flat-square)](https://github.com/johntrue15/MorphoClaw/actions/workflows/code-quality.yml)
+[![Docs](https://img.shields.io/github/actions/workflow/status/johntrue15/MorphoClaw/docs.yml?branch=main&label=docs&style=flat-square)](https://github.com/johntrue15/MorphoClaw/actions/workflows/docs.yml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue?style=flat-square)](https://www.python.org/)
 
 </div>
@@ -76,7 +76,7 @@ hide:
 !!! info "No knowledge graph data published yet"
     The graph is empty because no AutoResearchClaw run has published a snapshot
     to `docs/data/knowledge_graph.json` yet. Trigger the
-    [**AutoResearchClaw Agent** workflow](https://github.com/johntrue15/Metadata-to-Morphsource-compare/actions/workflows/autoresearchclaw.yml)
+    [**AutoResearchClaw Agent** workflow](https://github.com/johntrue15/MorphoClaw/actions/workflows/autoresearchclaw.yml)
     once and the graph will populate automatically on the next push.
 {% endif %}
 

@@ -7,8 +7,8 @@ Thank you for your interest in contributing to this project! This document provi
 1. **Fork the repository** on GitHub
 2. **Clone your fork** locally:
    ```bash
-   git clone https://github.com/your-username/Metadata-to-Morphsource-compare.git
-   cd Metadata-to-Morphsource-compare
+   git clone https://github.com/your-username/MorphoClaw.git
+   cd MorphoClaw
    ```
 
 3. **Set up your development environment**:

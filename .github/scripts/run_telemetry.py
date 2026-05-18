@@ -305,18 +305,48 @@ try:
                     py_bin = out["fastapi_exe"]
                 out["fastapi_py_bin"] = py_bin
                 if py_bin:
-                    # Plain version probe.
+                    def _run(cmd, timeout=30, scrub_dyn=False):
+                        # subprocess.run never raises on non-zero exit,
+                        # so we get full stdout+stderr regardless. We
+                        # explicitly clear PYTHONPATH/PYTHONHOME because
+                        # Slicer sets them to host-Python paths that
+                        # break the venv. When scrub_dyn=True we ALSO
+                        # clear LD_LIBRARY_PATH/DYLD_LIBRARY_PATH so the
+                        # child doesn't inherit Slicer's bundled ITK/VTK
+                        # (which conflicts with the venv's pip-installed
+                        # ones and causes SIGBUS on import).
+                        clean_env = dict(os.environ)
+                        clean_env.pop("PYTHONPATH", None)
+                        clean_env.pop("PYTHONHOME", None)
+                        if scrub_dyn:
+                            clean_env.pop("LD_LIBRARY_PATH", None)
+                            clean_env.pop("DYLD_LIBRARY_PATH", None)
+                            clean_env.pop("LD_PRELOAD", None)
+                        proc = subprocess.run(
+                            cmd, capture_output=True, timeout=timeout,
+                            env=clean_env,
+                        )
+                        return {
+                            "returncode": proc.returncode,
+                            "stdout": proc.stdout.decode("utf-8", "replace"),
+                            "stderr": proc.stderr.decode("utf-8", "replace"),
+                        }
+                    # Plain version probe (no heavy imports).
                     try:
-                        ver = subprocess.check_output(
-                            [py_bin, "-c",
-                             "import sys, platform; "
-                             "print(sys.version.split()[0]); "
-                             "print(sys.executable); "
-                             "print(platform.platform())"],
-                            stderr=subprocess.STDOUT, timeout=10).decode()
-                        out["fastapi_python"] = ver.strip().splitlines()
+                        ver = _run([py_bin, "-c",
+                                    "import sys, platform; "
+                                    "print(sys.version.split()[0]); "
+                                    "print(sys.executable); "
+                                    "print(platform.platform())"],
+                                   timeout=15)
+                        out["fastapi_python"] = ver
                     except Exception as e:
                         out["fastapi_python_err"] = repr(e)
+                    # Heavy import probe (torch.cuda.is_available()
+                    # etc). This will SIGBUS if the child inherits
+                    # Slicer's LD_LIBRARY_PATH and the venv's torch
+                    # links to a different ITK/VTK. We retry with
+                    # scrub_dyn=True if the first attempt died.
                     probe_src = '''
 import importlib, json
 info = {}
@@ -346,15 +376,26 @@ print(json.dumps(info))
                     try:
                         with open(probe_path, "w") as f:
                             f.write(probe_src)
-                        probe_out = subprocess.check_output(
-                            [py_bin, probe_path],
-                            stderr=subprocess.STDOUT, timeout=60).decode()
-                        try:
-                            out["fastapi_packages"] = json.loads(
-                                probe_out.strip().splitlines()[-1]
-                            )
-                        except Exception:
-                            out["fastapi_packages_raw"] = probe_out[:4000]
+                        # First attempt with the parent env (in case the
+                        # libs are compatible).
+                        probe_out = _run([py_bin, probe_path], timeout=120)
+                        if probe_out["returncode"] != 0:
+                            # Retry with cleared LD_LIBRARY_PATH so the
+                            # venv's own libs win.
+                            probe_out2 = _run([py_bin, probe_path],
+                                              timeout=120, scrub_dyn=True)
+                            out["fastapi_packages_raw_first"] = probe_out
+                            out["fastapi_packages_raw"] = probe_out2
+                            probe_out = probe_out2
+                        else:
+                            out["fastapi_packages_raw"] = probe_out
+                        if probe_out["returncode"] == 0:
+                            try:
+                                out["fastapi_packages"] = json.loads(
+                                    probe_out["stdout"].strip().splitlines()[-1]
+                                )
+                            except Exception as e:
+                                out["fastapi_packages_parse_err"] = repr(e)
                     except Exception as e:
                         out["fastapi_packages_err"] = repr(e)
                     finally:
@@ -364,10 +405,35 @@ print(json.dumps(info))
                             pass
                     # pip freeze for full reproducibility.
                     try:
-                        freeze = subprocess.check_output(
-                            [py_bin, "-m", "pip", "freeze"],
-                            stderr=subprocess.STDOUT, timeout=30).decode()
-                        out["fastapi_pip_freeze"] = freeze
+                        freeze = _run([py_bin, "-m", "pip", "freeze"], timeout=45)
+                        if freeze["returncode"] == 0:
+                            freeze_text = freeze["stdout"]
+                            out["fastapi_pip_freeze"] = freeze_text
+                            # Distil the key packages so paper readers
+                            # have a quick-reference even without
+                            # opening pip_freeze.
+                            wanted = (
+                                "torch", "nnInteractive", "nninteractive",
+                                "nnunetv2", "nnunet", "SimpleITK",
+                                "numpy", "batchgenerators",
+                                "dynamic_network_architectures",
+                                "fastapi", "uvicorn", "huggingface_hub",
+                                "scipy", "scikit-image",
+                            )
+                            wanted_lc = {w.lower() for w in wanted}
+                            distil = {}
+                            for line in freeze_text.splitlines():
+                                if "==" in line:
+                                    name, _, ver = line.partition("==")
+                                elif "@" in line:
+                                    name, _, ver = line.partition("@")
+                                else:
+                                    continue
+                                if name.strip().lower() in wanted_lc:
+                                    distil[name.strip()] = ver.strip()
+                            out["fastapi_packages_from_freeze"] = distil
+                        else:
+                            out["fastapi_pip_freeze_err"] = freeze
                     except Exception as e:
                         out["fastapi_pip_freeze_err"] = repr(e)
         except Exception as e:

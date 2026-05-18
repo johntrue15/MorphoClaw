@@ -136,7 +136,7 @@ back as a comment.
 <script>
 (function () {
   const GITHUB_OWNER = "johntrue15";
-  const GITHUB_REPO = "Metadata-to-Morphsource-compare";
+  const GITHUB_REPO = "MorphoClaw";
   const NEW_ISSUE_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/issues/new`;
   const WORKFLOW_URL  = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/query-processor.yml`;
 

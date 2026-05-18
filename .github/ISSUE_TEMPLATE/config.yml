@@ -1,11 +1,11 @@
 blank_issues_enabled: true
 contact_links:
   - name: Documentation
-    url: https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/README.md
+    url: https://github.com/johntrue15/MorphoClaw/blob/main/README.md
     about: Check the documentation for usage guides and examples
   - name: Development Guide
-    url: https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/DEVELOPMENT.md
+    url: https://github.com/johntrue15/MorphoClaw/blob/main/DEVELOPMENT.md
     about: Developer documentation and contribution guidelines
   - name: Security Issue
-    url: https://github.com/johntrue15/Metadata-to-Morphsource-compare/security
+    url: https://github.com/johntrue15/MorphoClaw/security
     about: Please report security vulnerabilities through GitHub Security

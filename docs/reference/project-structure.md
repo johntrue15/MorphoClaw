@@ -116,4 +116,4 @@ Tests/
 ```
 
 For the canonical, code-truth listing, browse the
-[repository tree on GitHub](https://github.com/johntrue15/Metadata-to-Morphsource-compare).
+[repository tree on GitHub](https://github.com/johntrue15/MorphoClaw).

@@ -2,10 +2,10 @@
   {
     "path": "artifacts/composite.nii.gz",
     "kind": "composite_labelmap",
-    "size_bytes": 16285,
-    "sha256": "5b91c1ff80262a572f4d905599c4b887e543c1963c3158e4ff47679883f463f1",
+    "size_bytes": 7289,
+    "sha256": "8c04b48503a0e88261a98b833a9ab1004cc120091a979ef9fde5d1f9b24d3b58",
     "extra": {
-      "sha256_remote": "5b91c1ff80262a572f4d905599c4b887e543c1963c3158e4ff47679883f463f1"
+      "sha256_remote": "8c04b48503a0e88261a98b833a9ab1004cc120091a979ef9fde5d1f9b24d3b58"
     }
   },
   {
@@ -41,25 +41,9 @@
     }
   },
   {
-    "path": "artifacts/per_segment/Segment_3.nii.gz",
-    "kind": "per_segment_labelmap",
-    "size_bytes": 71755,
-    "sha256": "71851be0c4a6724dccbc5454207fa1773bf58a518058611a8d58ab73b094a7f9",
-    "extra": {
-      "sid": "Segment_3",
-      "name": "Segment_3",
-      "color": [
-        0.6941,
-        0.4784,
-        0.3961
-      ],
-      "sha256_remote": "71851be0c4a6724dccbc5454207fa1773bf58a518058611a8d58ab73b094a7f9"
-    }
-  },
-  {
     "path": "summary.json",
     "kind": "summary",
-    "size_bytes": 2667,
-    "sha256": "73aa0ffa00a3084dfbd57bf7a1c0e7585b12863a9644f3469546bd35ea0af34c"
+    "size_bytes": 2073,
+    "sha256": "0184d003647369dca77ab1578cc9e557579fa5a845af1475c10d294011e59e54"
   }
 ]

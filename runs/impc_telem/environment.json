@@ -1,6 +1,6 @@
 {
   "local": {
-    "captured_utc": "2026-05-18T17:28:18.916114+00:00",
+    "captured_utc": "2026-05-18T17:35:05.493537+00:00",
     "host": "M4s-Mac-mini.local",
     "user": "m4macmini",
     "platform": "macOS-15.7.3-arm64-arm-64bit",
@@ -19,20 +19,17 @@
       "--max-candidates",
       "50000",
       "--max-steps",
-      "3",
-      "--min-delta",
-      "200",
-      "--patience",
-      "3",
+      "2",
       "--max-explosion-frac",
       "0.4",
       "--label",
       "mouse_skull",
+      "--no-screenshots",
       "--out-dir",
       "runs/impc_telem"
     ],
     "git_repo_root": "/Users/m4macmini/Documents/GitHub/Metadata-to-Morphsource-compare",
-    "git_commit": "81727b628ab5fe973f54024ebda092a0505d60f1",
+    "git_commit": "aa76e18cc9310225a5442f1ea41a2868dca28304",
     "git_branch": "main",
     "git_dirty": true,
     "git_remote": "https://github.com/johntrue15/MorphoClaw.git",
@@ -53,7 +50,7 @@
     }
   },
   "remote": {
-    "captured_utc": "2026-05-18T17:28:19.855805Z",
+    "captured_utc": "2026-05-18T17:35:06.476583Z",
     "host": "instance-579",
     "platform": "Linux-6.8.0-117-generic-x86_64-with-glibc2.35",
     "machine": "x86_64",
@@ -87,13 +84,57 @@
       "PYTHONPATH": "/software/u22/xalt/3.0.1/site_packages"
     },
     "fastapi_py_bin": "/media/volume/MyData/nninteractive/bin/python",
-    "fastapi_python_err": "CalledProcessError(1, ['/media/volume/MyData/nninteractive/bin/python', '-c', 'import sys, platform; print(sys.version.split()[0]); print(sys.executable); print(platform.platform())'])",
-    "fastapi_packages_err": "CalledProcessError(1, ['/media/volume/MyData/nninteractive/bin/python', '/tmp/bs_probe_b76_y3gv.py'])",
-    "fastapi_pip_freeze_err": "CalledProcessError(1, ['/media/volume/MyData/nninteractive/bin/python', '-m', 'pip', 'freeze'])",
+    "fastapi_python": {
+      "returncode": 0,
+      "stdout": "3.10.12\n/media/volume/MyData/nninteractive/bin/python\nLinux-6.8.0-117-generic-x86_64-with-glibc2.35\n",
+      "stderr": ""
+    },
+    "fastapi_packages_raw_first": {
+      "returncode": -7,
+      "stdout": "",
+      "stderr": "WARNING: In /tmp/SimpleITK-build/ITK/Modules/Core/Common/src/itkObjectFactoryBase.cxx, line 543\nPossible incompatible factory load:\nRunning itk version :\nitk version 5.4.6\nLoaded factory version:\nitk version 5.4.4\nLoading factory:\n/media/volume/MyData/Slicer/bin/../lib/Slicer-5.10/ITKFactories/libMRMLIDIOPlugin.so\n\n\n"
+    },
+    "fastapi_packages_raw": {
+      "returncode": 0,
+      "stdout": "{\"torch\": \"2.8.0+cu128\", \"nnInteractive\": \"?\", \"nnunetv2\": \"?\", \"nnunet\": \"<missing: ModuleNotFoundError(\\\"No module named 'nnunet'\\\")>\", \"SimpleITK\": \"2.5.5\", \"numpy\": \"2.2.3\", \"batchgenerators\": \"?\", \"dynamic_network_architectures\": \"?\", \"fastapi\": \"0.111.0\", \"uvicorn\": \"0.47.0\", \"torch_cuda_available\": true, \"torch_cuda_device_name\": \"GRID A100X-20C\", \"torch_cuda_device_count\": 1, \"torch_cuda_version\": \"12.8\", \"torch_mps_available\": false}\n",
+      "stderr": ""
+    },
+    "fastapi_packages": {
+      "torch": "2.8.0+cu128",
+      "nnInteractive": "?",
+      "nnunetv2": "?",
+      "nnunet": "<missing: ModuleNotFoundError(\"No module named 'nnunet'\")>",
+      "SimpleITK": "2.5.5",
+      "numpy": "2.2.3",
+      "batchgenerators": "?",
+      "dynamic_network_architectures": "?",
+      "fastapi": "0.111.0",
+      "uvicorn": "0.47.0",
+      "torch_cuda_available": true,
+      "torch_cuda_device_name": "GRID A100X-20C",
+      "torch_cuda_device_count": 1,
+      "torch_cuda_version": "12.8",
+      "torch_mps_available": false
+    },
+    "fastapi_pip_freeze": "acvl_utils==0.2.6\nannotated-doc==0.0.4\nannotated-types==0.7.0\nanyio==4.13.0\nbatchgenerators==0.25.2\nbatchgeneratorsv2==0.3.2\nblosc2==4.2.0\ncertifi==2026.4.22\ncharset-normalizer==3.4.7\nclick==8.3.3\nconnected-components-3d==3.28.0\ncontourpy==1.3.2\ncuda-bindings==13.2.0\ncuda-pathfinder==1.5.4\ncuda-toolkit==13.0.2\ncycler==0.12.1\ndnspython==2.8.0\ndynamic_network_architectures==0.4.3\neinops==0.8.2\nemail-validator==2.3.0\nexceptiongroup==1.3.1\nfastapi==0.111.0\nfastapi-cli==0.0.24\nfilelock==3.29.0\nfonttools==4.63.0\nfsspec==2026.4.0\nfuture==1.0.0\ngraphviz==0.21\nh11==0.16.0\nhf-xet==1.5.0\nhttpcore==1.0.9\nhttptools==0.7.1\nhttpx==0.28.1\nhuggingface_hub==0.36.2\nidna==3.15\nimagecodecs==2025.3.30\nImageIO==2.37.3\nimportlib_resources==7.1.0\nJinja2==3.1.6\njoblib==1.5.3\nkiwisolver==1.5.0\nlazy-loader==0.5\nlinecache2==1.0.0\nmarkdown-it-py==4.2.0\nMarkupSafe==3.0.3\nmatplotlib==3.10.9\nmdurl==0.1.2\nmpmath==1.3.0\nmsgpack==1.1.2\nndindex==1.10.1\nnetworkx==3.4.2\nnibabel==5.4.2\nnnInteractive==1.0.1\nnninteractive-slicer-server==0.3.0\nnnunetv2==2.6.4\nnumexpr==2.14.1\nnumpy==2.2.3\nnvidia-cublas==13.1.1.3\nnvidia-cublas-cu12==12.8.4.1\nnvidia-cuda-cupti==13.0.85\nnvidia-cuda-cupti-cu12==12.8.90\nnvidia-cuda-nvrtc==13.0.88\nnvidia-cuda-nvrtc-cu12==12.8.93\nnvidia-cuda-runtime==13.0.96\nnvidia-cuda-runtime-cu12==12.8.90\nnvidia-cudnn-cu12==9.10.2.21\nnvidia-cudnn-cu13==9.20.0.48\nnvidia-cufft==12.0.0.61\nnvidia-cufft-cu12==11.3.3.83\nnvidia-cufile==1.15.1.6\nnvidia-cufile-cu12==1.13.1.3\nnvidia-curand==10.4.0.35\nnvidia-curand-cu12==10.3.9.90\nnvidia-cusolver==12.0.4.66\nnvidia-cusolver-cu12==11.7.3.90\nnvidia-cusparse==12.6.3.3\nnvidia-cusparse-cu12==12.5.8.93\nnvidia-cusparselt-cu12==0.7.1\nnvidia-cusparselt-cu13==0.8.1\nnvidia-nccl-cu12==2.27.3\nnvidia-nccl-cu13==2.29.7\nnvidia-nvjitlink==13.0.88\nnvidia-nvjitlink-cu12==12.8.93\nnvidia-nvshmem-cu13==3.4.5\nnvidia-nvtx==13.0.85\nnvidia-nvtx-cu12==12.8.90\norjson==3.11.9\npackaging==26.2\npandas==2.3.3\npillow==11.1.0\npydantic==2.13.4\npydantic_core==2.46.4\nPygments==2.20.0\npyparsing==3.3.2\npython-dateutil==2.9.0.post0\npython-dotenv==1.2.2\npython-multipart==0.0.28\npytz==2026.2\nPyYAML==6.0.3\nregex==2026.5.9\nrequests==2.34.2\nrich==15.0.0\nrich-toolkit==0.19.9\nsafetensors==0.7.0\nscikit-image==0.25.2\nscikit-learn==1.7.2\nscipy==1.15.3\nseaborn==0.13.2\nshellingham==1.5.4\nsimpleitk==2.5.5\nsix==1.17.0\nstarlette==0.37.2\nsympy==1.14.0\nthreadpoolctl==3.6.0\ntifffile==2025.5.10\ntimm==1.0.22\ntokenizers==0.21.4\ntomli==2.4.1\ntorch==2.8.0\ntorchvision==0.23.0\ntqdm==4.67.3\ntraceback2==1.4.0\ntransformers==4.49.0\ntriton==3.4.0\ntyper==0.25.1\ntyping-inspection==0.4.2\ntyping_extensions==4.15.0\ntzdata==2026.2\nujson==5.12.1\nunittest2==1.1.0\nurllib3==2.7.0\nuvicorn==0.47.0\nuvloop==0.22.1\nwatchfiles==1.1.1\nwebsockets==16.0\nxxhash==3.5.0\nyacs==0.1.8\n",
+    "fastapi_packages_from_freeze": {
+      "batchgenerators": "0.25.2",
+      "dynamic_network_architectures": "0.4.3",
+      "fastapi": "0.111.0",
+      "huggingface_hub": "0.36.2",
+      "nnInteractive": "1.0.1",
+      "nnunetv2": "2.6.4",
+      "numpy": "2.2.3",
+      "scikit-image": "0.25.2",
+      "scipy": "1.15.3",
+      "simpleitk": "2.5.5",
+      "torch": "2.8.0",
+      "uvicorn": "0.47.0"
+    },
     "nninteractive_err": "ModuleNotFoundError(\"No module named 'nnInteractive'\")",
     "torch_err": "ModuleNotFoundError(\"No module named 'torch'\")",
     "psutil_err": "ModuleNotFoundError(\"No module named 'psutil'\")",
     "status": "ok",
-    "_dt_s": 0.645
+    "_dt_s": 6.432
   }
 }

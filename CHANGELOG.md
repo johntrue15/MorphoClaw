@@ -67,4 +67,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive test suite
 - Interactive query interface
 
-[1.0.0]: https://github.com/johntrue15/Metadata-to-Morphsource-compare/releases/tag/v1.0.0
+[1.0.0]: https://github.com/johntrue15/MorphoClaw/releases/tag/v1.0.0

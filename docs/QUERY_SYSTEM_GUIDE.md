@@ -8,7 +8,7 @@ The MorphoSource Query System allows you to ask natural language questions about
 
 ### Step 1: Submit a Query
 
-1. Visit the GitHub Pages site: https://johntrue15.github.io/Metadata-to-Morphsource-compare/
+1. Visit the GitHub Pages site: https://johntrue15.github.io/MorphoClaw/
 2. Enter your question in the text box
 3. Click "Prepare to Submit Query"
 4. Click the link to create a GitHub Issue (requires GitHub account)

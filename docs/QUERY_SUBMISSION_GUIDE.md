@@ -3,7 +3,7 @@
 ## 🎯 How to Submit a Query
 
 ### Step 1: Visit the Query Page
-Go to: **[https://johntrue15.github.io/Metadata-to-Morphsource-compare/](https://johntrue15.github.io/Metadata-to-Morphsource-compare/)**
+Go to: **[https://johntrue15.github.io/MorphoClaw/](https://johntrue15.github.io/MorphoClaw/)**
 
 ### Step 2: Enter Your Question
 Type your question in the text box. Examples:
@@ -170,7 +170,7 @@ If your first query is too specific and returns no results:
 ## 📚 Additional Resources
 
 - [Complete Query System Guide](QUERY_SYSTEM_GUIDE.md)
-- [Repository README](https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/README.md)
+- [Repository README](https://github.com/johntrue15/MorphoClaw/blob/main/README.md)
 - [GitHub Issues Help](https://docs.github.com/en/issues)
 - [MorphoSource](https://www.morphosource.org)
 

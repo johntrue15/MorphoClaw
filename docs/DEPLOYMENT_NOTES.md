@@ -15,11 +15,11 @@ only have to happen once, on this repository's GitHub settings.
     to **GitHub Actions**, GitHub's default Jekyll builder
     (`actions/jekyll-build-pages`) will continue to run on every push.
 
-    A transitional [`_config.yml`](https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/_config.yml)
+    A transitional [`_config.yml`](https://github.com/johntrue15/MorphoClaw/blob/main/_config.yml)
     is committed at the repo root that tells Jekyll to **skip** everything in
     `docs/`, `mkdocs.yml`, `requirements*.txt`, `metadata_to_morphsource/`,
     and friends, so the legacy Jekyll build no longer chokes on MkDocs Jinja
-    macros (`{% set %}`, `{{ kg_stats() }}`). Without it, you would see:
+    macros ({% raw %}`{% set %}`, `{{ kg_stats() }}`{% endraw %}). Without it, you would see:
 
     ```
     Liquid Exception: Liquid syntax error (line 34): Unknown tag 'set' in docs/index.md
@@ -35,7 +35,7 @@ only have to happen once, on this repository's GitHub settings.
 
 The repository was previously served from **Deploy from a branch → `main` /docs**
 (the legacy `docs/index.html` query form). The new docs site is built by
-the [Docs workflow](https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/.github/workflows/docs.yml)
+the [Docs workflow](https://github.com/johntrue15/MorphoClaw/blob/main/.github/workflows/docs.yml)
 and deployed via `actions/deploy-pages`, so the source must change to
 **GitHub Actions**.
 
@@ -45,16 +45,16 @@ and deployed via `actions/deploy-pages`, so the source must change to
 
 The next push to `main` (or a manual run of **Actions → Docs → Run workflow**)
 will build the MkDocs site and publish it at
-<https://johntrue15.github.io/Metadata-to-Morphsource-compare/>.
+<https://johntrue15.github.io/MorphoClaw/>.
 
-> The legacy URL <https://johntrue15.github.io/Metadata-to-Morphsource-compare/query.html>
+> The legacy URL <https://johntrue15.github.io/MorphoClaw/query.html>
 > still works &mdash; the original HTML form is preserved verbatim and copied
 > through by MkDocs as a static asset.
 
 ## 2. (Already configured) Workflow permissions for the snapshot commit
 
 The
-[`autoresearchclaw.yml`](https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/.github/workflows/autoresearchclaw.yml)
+[`autoresearchclaw.yml`](https://github.com/johntrue15/MorphoClaw/blob/main/.github/workflows/autoresearchclaw.yml)
 workflow now grants `contents: write` to the `research-pipeline` job so the
 **Commit refreshed knowledge graph snapshot** step can push `docs/data/**`
 back to `main` via `stefanzweifel/git-auto-commit-action@v5`. No additional
@@ -72,8 +72,8 @@ You can confirm everything works before the first agent run:
 
 1. **Actions → Docs → Run workflow** &mdash; this builds and deploys the
    site with the empty-state knowledge graph.
-2. Open <https://johntrue15.github.io/Metadata-to-Morphsource-compare/>
-   and the [knowledge-graph page](https://johntrue15.github.io/Metadata-to-Morphsource-compare/knowledge-graph/).
+2. Open <https://johntrue15.github.io/MorphoClaw/>
+   and the [knowledge-graph page](https://johntrue15.github.io/MorphoClaw/knowledge-graph/).
 3. The graph viewer should show the *No runs published yet* empty state
    with a link to the AutoResearchClaw workflow.
 

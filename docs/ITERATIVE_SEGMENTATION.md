@@ -372,4 +372,4 @@ leaks into training but is used to compute `vs_human.csv`.
    citation-ready BibTeX of the MorphoSource records. `citation_extractor.py`
    could be re-used here.
 
-See the [project README](https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/README.md) for the wider AutoResearchClaw context.
+See the [project README](https://github.com/johntrue15/MorphoClaw/blob/main/README.md) for the wider AutoResearchClaw context.

@@ -10,7 +10,7 @@ hide:
 The graph below visualises every MorphoSource record, specimen, paper, taxon,
 and institution that AutoResearchClaw has touched. It refreshes automatically
 on every push to `main` after the
-[AutoResearchClaw Agent workflow](https://github.com/johntrue15/Metadata-to-Morphsource-compare/actions/workflows/autoresearchclaw.yml)
+[AutoResearchClaw Agent workflow](https://github.com/johntrue15/MorphoClaw/actions/workflows/autoresearchclaw.yml)
 publishes a new snapshot.
 
 <div id="kg-app" class="kg-app">
@@ -71,7 +71,7 @@ publishes a new snapshot.
       <h2>No runs published yet</h2>
       <p>
         Kick off the
-        <a href="https://github.com/johntrue15/Metadata-to-Morphsource-compare/actions/workflows/autoresearchclaw.yml" target="_blank" rel="noopener">AutoResearchClaw Agent workflow</a>
+        <a href="https://github.com/johntrue15/MorphoClaw/actions/workflows/autoresearchclaw.yml" target="_blank" rel="noopener">AutoResearchClaw Agent workflow</a>
         and the graph will populate automatically on the next push to <code>main</code>.
       </p>
     </div>
@@ -101,7 +101,7 @@ publishes a new snapshot.
 ## Schema
 
 Nodes use the same colours and shapes as the
-[`KnowledgeGraph.export_html`](https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/.github/scripts/knowledge_graph.py)
+[`KnowledgeGraph.export_html`](https://github.com/johntrue15/MorphoClaw/blob/main/.github/scripts/knowledge_graph.py)
 helper, so the view here matches the per-run interactive HTML attached to each workflow artifact.
 
 | Node type | Meaning | Connects via |
@@ -113,5 +113,5 @@ helper, so the view here matches the per-run interactive HTML attached to each w
 | Taxon | Linnaean taxon (incl. GBIF hierarchy) | `IS_TAXON`, `HAS_RANK` |
 | MediaList | A MorphoSource curated list seed | `CONTAINS` |
 
-For the JSON shape itself, see [`docs/data/knowledge_graph.json`](https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/docs/data/knowledge_graph.json) &mdash;
+For the JSON shape itself, see [`docs/data/knowledge_graph.json`](https://github.com/johntrue15/MorphoClaw/blob/main/docs/data/knowledge_graph.json) &mdash;
 it is Neo4j / Cytoscape compatible.

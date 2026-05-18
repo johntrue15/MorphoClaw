@@ -84,3 +84,11 @@ data/json/morphosource_data_complete_compare.json
 # MkDocs build output
 site/
 
+# Telemetry / run artifacts produced by the Slicer remote scripts.
+# Each run is reproducible from manifest.json + replay.sh, so we don't
+# version the per-run outputs themselves. If you want to publish a
+# specific run alongside a paper, copy the directory out of `runs/`
+# and check it in deliberately.
+runs/
+smoke_out/
+

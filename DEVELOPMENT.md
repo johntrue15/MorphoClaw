@@ -17,8 +17,8 @@ This guide covers the development workflow, tools, and best practices for contri
 
 ```bash
 # Clone the repository
-git clone https://github.com/johntrue15/Metadata-to-Morphsource-compare.git
-cd Metadata-to-Morphsource-compare
+git clone https://github.com/johntrue15/MorphoClaw.git
+cd MorphoClaw
 
 # Create a virtual environment
 python -m venv venv
@@ -81,7 +81,7 @@ Enable these features:
 ### Directory Structure
 
 ```
-Metadata-to-Morphsource-compare/
+MorphoClaw/
 ├── .github/
 │   ├── scripts/          # GitHub Actions helper scripts
 │   └── workflows/        # CI/CD workflows

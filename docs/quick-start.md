@@ -13,10 +13,10 @@ This page walks through the **two** common ways to use AutoResearchClaw:
 ## :material-flash: Submit a query in 30 seconds
 
 [:material-cursor-default-click: Open the Submit-a-Query page](query.md){ .md-button .md-button--primary }
-[:material-github: Or create an issue directly](https://github.com/johntrue15/Metadata-to-Morphsource-compare/issues/new?labels=query-request&title=Query%3A){ .md-button }
+[:material-github: Or create an issue directly](https://github.com/johntrue15/MorphoClaw/issues/new?labels=query-request&title=Query%3A){ .md-button }
 
 Behind the scenes, the form opens a pre-populated **GitHub issue**. A workflow
-([on-request-opened.yml](https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/.github/workflows/on-request-opened.yml))
+([on-request-opened.yml](https://github.com/johntrue15/MorphoClaw/blob/main/.github/workflows/on-request-opened.yml))
 picks up the issue, formats your natural-language question into a MorphoSource
 API URL, runs the search, and posts results back as a comment.
 

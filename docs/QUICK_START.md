@@ -3,7 +3,7 @@
 ## Step-by-Step
 
 ### 1️⃣ Visit the Site
-**[https://johntrue15.github.io/Metadata-to-Morphsource-compare/](https://johntrue15.github.io/Metadata-to-Morphsource-compare/)**
+**[https://johntrue15.github.io/MorphoClaw/](https://johntrue15.github.io/MorphoClaw/)**
 
 ### 2️⃣ Enter Your Question
 ```
@@ -53,8 +53,8 @@ Results posted to your issue in 1-2 minutes ⏱️
 ## Need Help?
 - 📖 [Full Submission Guide](QUERY_SUBMISSION_GUIDE.md)
 - 📚 [System Documentation](QUERY_SYSTEM_GUIDE.md)
-- ❓ [Create a support issue](https://github.com/johntrue15/Metadata-to-Morphsource-compare/issues/new)
+- ❓ [Create a support issue](https://github.com/johntrue15/MorphoClaw/issues/new)
 
 ---
 
-**Ready?** [Start your first query now! →](https://johntrue15.github.io/Metadata-to-Morphsource-compare/)
+**Ready?** [Start your first query now! →](https://johntrue15.github.io/MorphoClaw/)

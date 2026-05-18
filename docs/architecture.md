@@ -45,7 +45,7 @@ flowchart TB
   reports build on what earlier ones found.
 
 The reference implementation lives in
-[`.github/scripts/research_agent.py`](https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/.github/scripts/research_agent.py).
+[`.github/scripts/research_agent.py`](https://github.com/johntrue15/MorphoClaw/blob/main/.github/scripts/research_agent.py).
 
 ## Tool calls
 
@@ -66,7 +66,7 @@ flowchart LR
 ```
 
 Every tool is a plain Python module under
-[`.github/scripts/`](https://github.com/johntrue15/Metadata-to-Morphsource-compare/tree/main/.github/scripts).
+[`.github/scripts/`](https://github.com/johntrue15/MorphoClaw/tree/main/.github/scripts).
 They are imported directly by the agent and also exposed to the LLM as
 OpenAI function-calling schemas (see `chat_handler.TOOLS`).
 
@@ -86,7 +86,7 @@ flowchart LR
     MediaList -->|CONTAINS| Media
 ```
 
-See [`.github/scripts/knowledge_graph.py`](https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/.github/scripts/knowledge_graph.py)
+See [`.github/scripts/knowledge_graph.py`](https://github.com/johntrue15/MorphoClaw/blob/main/.github/scripts/knowledge_graph.py)
 for the implementation. The same module renders the per-run interactive HTML
 attached to each workflow artifact. The
 [**Live knowledge graph**](knowledge-graph.md) page on this site loads the

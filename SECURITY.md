@@ -20,7 +20,7 @@ We take the security of Metadata-to-Morphsource-Compare seriously. If you discov
 Instead, please report them via one of the following methods:
 
 1. **Preferred**: Open a security advisory on GitHub
-   - Go to the [Security tab](https://github.com/johntrue15/Metadata-to-Morphsource-compare/security)
+   - Go to the [Security tab](https://github.com/johntrue15/MorphoClaw/security)
    - Click "Report a vulnerability"
    - Provide detailed information about the vulnerability
 

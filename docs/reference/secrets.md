@@ -40,7 +40,7 @@ to commit `docs/data/**` back to `main`.
 
 ## Local `.env` template
 
-The repo ships an [`.env.example`](https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/.env.example).
+The repo ships an [`.env.example`](https://github.com/johntrue15/MorphoClaw/blob/main/.env.example).
 Copy it and fill in your values:
 
 ```bash
@@ -52,7 +52,7 @@ Never commit a real `.env` &mdash; it is in `.gitignore`.
 ## Verifying secrets in CI
 
 The `code-quality.yml` workflow includes a smoke test
-([Tests/test_tool_calls.py](https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/Tests/test_tool_calls.py))
+([Tests/test_tool_calls.py](https://github.com/johntrue15/MorphoClaw/blob/main/Tests/test_tool_calls.py))
 that imports every tool and asserts each gracefully returns a structured
 error dict when its API key is missing &mdash; so a missing secret does not
 crash the agent, it just disables that tool.
