@@ -287,11 +287,15 @@
       }
       const sortedTypes = [...types.keys()].sort();
       state.activeTypes = new Set(sortedTypes);
+      // autocomplete="off" prevents Safari/Firefox from restoring stale
+      // checked-state when innerHTML re-renders the filter group; without
+      // it the previous session's interaction can leave checkboxes
+      // visually unchecked while state.activeTypes still says they're on.
       ui.typeFilters.innerHTML = sortedTypes
         .map(
           (t) => `
             <label class="kg-checkbox">
-              <input type="checkbox" data-kg-type="${escapeHTML(t)}" checked />
+              <input type="checkbox" data-kg-type="${escapeHTML(t)}" autocomplete="off" checked />
               <span class="kg-swatch" style="background:${TYPE_COLORS[t] || "#8b949e"}"></span>
               <span>${escapeHTML(t)}</span>
               <span class="kg-count" data-count="${escapeHTML(t)}">${types.get(t)}</span>
@@ -299,6 +303,12 @@
           `,
         )
         .join("");
+      // Force the DOM state to match what we just wrote. The `checked`
+      // attribute alone isn't enough on browsers that aggressively
+      // restore form values across reloads.
+      ui.typeFilters.querySelectorAll("input[type=checkbox]").forEach((cb) => {
+        cb.checked = true;
+      });
 
       const rels = new Map();
       for (const e of state.raw.edges) {
@@ -310,13 +320,16 @@
         .map(
           (r) => `
             <label class="kg-checkbox">
-              <input type="checkbox" data-kg-rel="${escapeHTML(r)}" checked />
+              <input type="checkbox" data-kg-rel="${escapeHTML(r)}" autocomplete="off" checked />
               <span>${escapeHTML(r)}</span>
               <span class="kg-count">${rels.get(r)}</span>
             </label>
           `,
         )
         .join("");
+      ui.relationFilters.querySelectorAll("input[type=checkbox]").forEach((cb) => {
+        cb.checked = true;
+      });
 
       // Legend mirrors the active types.
       ui.legend.innerHTML = sortedTypes
@@ -499,12 +512,25 @@
     }
 
     async function loadAndRender(url) {
+      console.info("[KG] Loading graph data:", url);
       const payload = await fetchJSON(url, {
         nodes: [],
         edges: [],
         stats: {},
         generated_at: null,
       });
+      console.info(
+        "[KG] Loaded %d nodes / %d edges (stats: %o)",
+        (payload.nodes || []).length,
+        (payload.edges || []).length,
+        payload.stats || {},
+      );
+      // Hide the empty-state pre-emptively when we know real data came
+      // back; rebuild() will toggle it again if the active filter set
+      // happens to filter every node out.
+      if (ui.empty) {
+        ui.empty.hidden = (payload.nodes || []).length > 0;
+      }
       state.raw = {
         nodes: payload.nodes || [],
         edges: payload.edges || [],

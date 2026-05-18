@@ -2,6 +2,7 @@
 title: Live knowledge graph
 description: Interactive, auto-updated graph of MorphoSource media, specimens, papers, institutions, and taxa discovered by AutoResearchClaw.
 hide:
+  - navigation
   - toc
 ---
 

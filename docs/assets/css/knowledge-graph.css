@@ -9,7 +9,9 @@
   grid-template-columns: 280px 1fr;
   gap: 1rem;
   margin: 1.5rem 0 2rem 0;
-  min-height: 640px;
+  /* The viewer needs height to be useful. Capped at 900px so monstrous
+     monitors don't end up with a near-empty canvas. */
+  min-height: min(80vh, 900px);
 }
 
 @media (max-width: 900px) {
@@ -17,6 +19,20 @@
     grid-template-columns: 1fr;
     min-height: auto;
   }
+}
+
+/* When the page declares `hide: [navigation, toc]` MkDocs Material still
+   imposes a max-width on the inner content. Widen that on the KG page so
+   the graph stage actually fills the screen instead of sitting in a
+   narrow column. The selector targets the page-specific class Material
+   adds when toc/nav are hidden, scoped to anything that contains a
+   knowledge-graph viewer so it can't bleed into unrelated pages. */
+.md-content:has(.kg-app) .md-content__inner {
+  max-width: none;
+  margin: 0 1.5rem;
+}
+.md-main:has(.kg-app) .md-main__inner {
+  max-width: none;
 }
 
 /* ----- Sidebar ----- */
@@ -183,6 +199,15 @@
   padding: 2rem;
   text-align: center;
   color: var(--md-default-fg-color--light);
+  background: var(--md-default-bg-color);
+  pointer-events: none;
+}
+
+/* Without this rule the `display: flex` above overrides the browser's
+   default `[hidden] { display: none }`, leaving the empty-state visible
+   on top of a rendered graph. Bug we hit on the live site. */
+.kg-empty[hidden] {
+  display: none !important;
 }
 
 .kg-empty h2 {

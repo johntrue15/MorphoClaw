@@ -148,6 +148,14 @@ def _media_id(item: dict) -> str:
     return ""
 
 
+def _media_parent_id(item: dict) -> str:
+    for key in ("media_parent_id", "media_parent_id_ssi", "media_parent"):
+        v = item.get(key)
+        if v:
+            return _safe_first(v)
+    return ""
+
+
 def _matches_any(text: str, tokens: Iterable[str]) -> bool:
     text = (text or "").lower()
     return any(tok in text for tok in tokens)
@@ -246,14 +254,39 @@ def discover_pairs(client: MorphoSourceClient,
             continue
         by_specimen.setdefault(spec, []).append(item)
 
-    # Lazy import: only needed for the cross-project fallback.
-    _list_media = None
-    if cross_project_lookup:
+    # Cache /api/media/{id} replies so we don't hit MorphoSource twice
+    # for the same parent CT.
+    parent_cache: dict[str, dict] = {}
+
+    def _resolve_parent_ct(parent_id: str) -> Optional[dict]:
+        """Fetch a parent CT record by media id; require open + volumetric."""
+        if not parent_id:
+            return None
+        if parent_id in parent_cache:
+            return parent_cache[parent_id]
         try:
-            from find_segmentation_pairs import _list_media_for_object as _list_media  # noqa: E402
+            rec = client.get_media(parent_id)
         except Exception as exc:
-            log.warning("cross-project lookup unavailable: %s", exc)
-            _list_media = None
+            log.warning("get_media(%s) failed: %s", parent_id, exc)
+            parent_cache[parent_id] = {}
+            return None
+        data = rec.data or {}
+        m = data.get("response", data)
+        if isinstance(m, dict):
+            m = m.get("media", m)
+        if not isinstance(m, dict):
+            parent_cache[parent_id] = {}
+            return None
+        parent_cache[parent_id] = m
+        if not _is_open(m):
+            log.info("parent %s exists but visibility=%s — skipping",
+                     parent_id, _visibility(m))
+            return None
+        if not _matches_any(_media_type(m), VOLUMETRIC_TOKENS):
+            log.info("parent %s exists but media_type=%s — skipping",
+                     parent_id, _media_type(m))
+            return None
+        return m
 
     pairs: list[SpecimenPair] = []
     for spec, records in by_specimen.items():
@@ -263,24 +296,21 @@ def discover_pairs(client: MorphoSourceClient,
                   if _is_open(r) and _matches_any(_media_type(r), MESH_TOKENS)]
         if not meshes:
             continue
-        # If no CT in the project's own records, try sibling media for
-        # the same physical object — this handles the common case where
-        # only the derivative mesh lives in the project, while the
-        # parent CT lives in the original specimen's project.
-        if not cts and _list_media is not None:
-            try:
-                siblings = _list_media(client, spec)
-            except Exception as exc:
-                log.warning("sibling lookup for %s failed: %s", spec, exc)
-                siblings = []
-            sibling_cts = [
-                s for s in siblings
-                if _is_open(s) and _matches_any(_media_type(s), VOLUMETRIC_TOKENS)
-            ]
-            if sibling_cts:
-                log.info("specimen %s: no CT in project, found %d sibling open CT(s)",
-                         spec, len(sibling_cts))
-                cts = sibling_cts
+        # When no CT lives inside the project query, follow each mesh's
+        # ``media_parent_id`` (the parent CT it was derived from). For
+        # derivative-mesh projects like 000358382 "Colors of Skull
+        # Anatomy", this is the only way to discover the source CT.
+        if not cts and cross_project_lookup:
+            for mesh_record in meshes:
+                pid = _media_parent_id(mesh_record)
+                if not pid:
+                    continue
+                parent = _resolve_parent_ct(pid)
+                if parent:
+                    log.info("specimen %s: linked to open parent CT %s via "
+                             "media_parent_id of mesh %s",
+                             spec, pid, _media_id(mesh_record))
+                    cts.append(parent)
         if not cts:
             continue
         # Pick the largest CT (proxy for highest fidelity) and largest mesh.
@@ -451,9 +481,14 @@ def find_mesh(mesh_dir: Path) -> Optional[Path]:
 
 
 def crop_and_voxelize(ct_path: Path, mesh_path: Path, out_dir: Path,
-                       margin_mm: float = 5.0) -> dict:
+                       margin_mm: float = 5.0,
+                       max_voxel_axis: Optional[int] = 384) -> dict:
     """Crop *ct_path* around *mesh_path* bbox and voxelize the mesh.
 
+    If ``max_voxel_axis`` is set and any axis of the cropped CT exceeds
+    it, resample the cropped CT (linear) and the voxelized GT (nearest
+    neighbour) to a coarser grid that keeps every axis at or below the
+    cap. Both outputs share the same grid so metrics remain valid.
     Returns dict of paths and summaries.
     """
     from nninteractive_compare import (
@@ -486,9 +521,72 @@ def crop_and_voxelize(ct_path: Path, mesh_path: Path, out_dir: Path,
         if "error" in vox_summary:
             return {"error": "voxelize_failed", "details": vox_summary}
 
+    resample_summary = None
+    if max_voxel_axis and max_voxel_axis > 0:
+        resample_summary = _resample_cap_axis(cropped, voxelized, max_voxel_axis)
+
     return {"crop": crop_summary, "voxelize": vox_summary,
+            "resample": resample_summary,
             "cropped_path": str(cropped),
             "voxelized_gt_path": str(voxelized)}
+
+
+def _resample_cap_axis(ct_path: Path, gt_path: Path,
+                        max_axis: int) -> Optional[dict]:
+    """Resample *ct_path* and *gt_path* in place to keep every axis <= max_axis.
+
+    The CT is resampled with linear interpolation; the GT labelmap with
+    nearest-neighbour to keep its binary value space exact. Both end up
+    on the same grid (origin/direction preserved, spacing scaled).
+    """
+    _import_heavy()
+    import SimpleITK as sitk
+    import numpy as np
+    img = sitk.ReadImage(str(ct_path))
+    size = img.GetSize()
+    if max(size) <= max_axis:
+        log.info("Cropped CT %s: max axis %d <= cap %d (no resample)",
+                 ct_path.name, max(size), max_axis)
+        return {"resampled": False, "size_before": list(size)}
+
+    scale = max_axis / float(max(size))
+    new_size = [max(1, int(round(s * scale))) for s in size]
+    spacing = img.GetSpacing()
+    new_spacing = [
+        spacing[i] * (size[i] / float(new_size[i])) for i in range(3)
+    ]
+    log.info("Resampling CT %s: %s spacing=%s -> %s spacing=%s "
+             "(cap=%d, scale=%.3f)",
+             ct_path.name, list(size), [round(s, 5) for s in spacing],
+             new_size, [round(s, 5) for s in new_spacing],
+             max_axis, scale)
+
+    def _resample(src: "sitk.Image", interp: int) -> "sitk.Image":
+        ref = sitk.Image(new_size, src.GetPixelID())
+        ref.SetSpacing(new_spacing)
+        ref.SetOrigin(src.GetOrigin())
+        ref.SetDirection(src.GetDirection())
+        return sitk.Resample(src, ref, sitk.Transform(), interp,
+                             0, src.GetPixelID())
+
+    ct_new = _resample(img, sitk.sitkLinear)
+    sitk.WriteImage(ct_new, str(ct_path))
+    log.info("  wrote %s (%d bytes)", ct_path.name, ct_path.stat().st_size)
+
+    gt = sitk.ReadImage(str(gt_path))
+    gt_new = _resample(gt, sitk.sitkNearestNeighbor)
+    sitk.WriteImage(gt_new, str(gt_path))
+    log.info("  wrote %s (%d bytes)", gt_path.name, gt_path.stat().st_size)
+
+    return {
+        "resampled": True,
+        "size_before": list(size),
+        "size_after": list(new_size),
+        "spacing_before": [float(s) for s in spacing],
+        "spacing_after": [float(s) for s in new_spacing],
+        "max_axis_cap": max_axis,
+        "scale": scale,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -723,6 +821,7 @@ def run_specimen(pair: SpecimenPair, specimen_dir: Path,
                  margin_mm: float,
                  base_url: str,
                  parent_logger: RunLogger,
+                 max_voxel_axis: Optional[int] = 384,
                  no_screenshots: bool = False,
                  dry_run: bool = False) -> SpecimenResult:
     """Run the full per-specimen pipeline.
@@ -812,7 +911,8 @@ def run_specimen(pair: SpecimenPair, specimen_dir: Path,
     try:
         cv = crop_and_voxelize(ct_nifti, mesh_path,
                                  specimen_dir / "preprocessing",
-                                 margin_mm=margin_mm)
+                                 margin_mm=margin_mm,
+                                 max_voxel_axis=max_voxel_axis)
     except Exception as exc:
         result.error = f"crop_voxelize_failed: {exc!r}"
         parent_logger.log(f"  crop+voxelize FAILED: {exc!r}")
@@ -1230,7 +1330,15 @@ def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
                    help="Search query that returns this project's media. "
                         "Default: %(default)r")
     p.add_argument("--specimens", type=int, default=3,
-                   help="Number of specimens to score (default: 3)")
+                   help="Target number of *successful* specimens to score "
+                        "(default: 3). The orchestrator keeps trying "
+                        "candidates from discovery until this many succeed "
+                        "or --max-attempts is reached.")
+    p.add_argument("--max-attempts", type=int, default=0,
+                   help="Hard cap on specimen attempts; 0 = 2x --specimens. "
+                        "Failures (frame-mismatched meshes, push timeouts, "
+                        "...) are recorded in events.jsonl and the run "
+                        "continues with the next candidate.")
     p.add_argument("--specimens-manifest", type=Path, default=None,
                    help="Optional JSON file pinning specific (CT, mesh) IDs. "
                         "Format: a JSON list of objects matching SpecimenPair "
@@ -1245,6 +1353,12 @@ def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
                    help="Bright-seed intensity threshold percentile (default 99)")
     p.add_argument("--margin-mm", type=float, default=5.0,
                    help="Crop margin around mesh bbox in mm (default 5)")
+    p.add_argument("--max-voxel-axis", type=int, default=384,
+                   help="Resample the cropped CT (linear) + voxelized GT "
+                        "(nearest neighbour) so no axis exceeds this many "
+                        "voxels. Keeps the base64-over-/slicer/exec push "
+                        "below the proxy's HTTP body cap. Set 0 to disable. "
+                        "Default: 384.")
     p.add_argument("--max-ct-gb", type=float, default=5.0,
                    help="Skip specimens whose CT archive is larger than this "
                         "(default 5 GB; set 0 to disable)")
@@ -1341,11 +1455,16 @@ def main(argv: Optional[list[str]] = None) -> int:
             None if args.max_ct_gb <= 0
             else int(args.max_ct_gb * (1 << 30))
         )
+        # Pull a few extra candidates so the loop has fallbacks when the
+        # first picks fail (e.g. coordinate-frame mismatches).
+        attempt_cap = args.max_attempts or max(args.specimens * 2,
+                                                  args.specimens + 2)
         chosen = select_pilot_specimens(
-            all_pairs, n=args.specimens, max_ct_bytes=max_bytes,
+            all_pairs, n=attempt_cap, max_ct_bytes=max_bytes,
         )
         parent_logger.log(f"discovery returned {len(all_pairs)} specimens; "
-                           f"selected {len(chosen)} for the pilot")
+                           f"queued {len(chosen)} candidates "
+                           f"(targeting {args.specimens} successes)")
 
     # Persist the chosen specimen list as part of inputs.json
     inputs_payload = {
@@ -1377,9 +1496,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     # ---- Per-specimen pipeline ----
     max_steps = args.max_steps or max(args.budgets)
     results: list[SpecimenResult] = []
+    n_succeeded = 0
     specimens_root = args.out_dir / "specimens"
     specimens_root.mkdir(parents=True, exist_ok=True)
+    target = args.specimens if not args.specimens_manifest else len(chosen)
     for i, pair in enumerate(chosen, 1):
+        if not args.dry_run and n_succeeded >= target:
+            parent_logger.log(f"hit target {target} successes after "
+                               f"{i-1} attempts; stopping early")
+            parent_logger.event("target_reached",
+                                  successes=n_succeeded,
+                                  attempts=i - 1, target=target)
+            break
         spec_dir = specimens_root / pair.slug
         try:
             r = run_specimen(
@@ -1390,6 +1518,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 margin_mm=args.margin_mm,
                 base_url=base_url,
                 parent_logger=parent_logger,
+                max_voxel_axis=args.max_voxel_axis,
                 no_screenshots=args.no_screenshots,
                 dry_run=args.dry_run,
             )
@@ -1405,6 +1534,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                 error=f"catastrophic: {exc!r}",
             )
         results.append(r)
+        if not r.error and r.metric_rows:
+            n_succeeded += 1
 
     # ---- Aggregate ----
     if not args.dry_run:
@@ -1430,8 +1561,17 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
 
     # ---- Replay script (top-level pilot) ----
+    # Use an absolute path to the orchestrator + the venv interpreter
+    # that was used for this run, so the replay script works regardless
+    # of how deep ``out_dir`` is nested under the repo root.
+    repo_root = SCRIPT_DIR.parents[1]
+    orchestrator_path = SCRIPT_DIR / "eval_project358382_pilot.py"
+    try:
+        orch_str = str(orchestrator_path.relative_to(repo_root))
+    except ValueError:
+        orch_str = str(orchestrator_path)
     replay_cmd = [
-        f'python3 "{Path(__file__).name}"',
+        f'"{sys.executable}" "{orch_str}"',
         f'--project-id {args.project_id}',
         f'--project-query "{args.project_query}"',
         f'--specimens {args.specimens}',
@@ -1439,6 +1579,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         f'--max-steps {max_steps}',
         f'--intensity-percentile {args.intensity_percentile}',
         f'--margin-mm {args.margin_mm}',
+        f'--max-voxel-axis {args.max_voxel_axis}',
         f'--max-ct-gb {args.max_ct_gb}',
         f'--out-dir runs/replay_{parent_logger.run_id}',
         f'--label "{args.label}"',
