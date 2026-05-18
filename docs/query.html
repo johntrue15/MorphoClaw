@@ -283,21 +283,42 @@
             submitBtn.innerHTML = '<span class="spinner"></span> Submitting...';
             
             try {
-                // Create issue title and body
-                const issueTitle = `Query: ${queryText.substring(0, 50)}${queryText.length > 50 ? '...' : ''}`;
-                const issueBody = `## MorphoSource Query Submission
+                // Create issue title and body. Title uses the "Comparison:" prefix and
+                // the body uses the same H3 sections as the comparison_request issue
+                // template so the existing request-labeler / request-initial-comments
+                // workflows can parse it.
+                const issueTitle = `Comparison: ${queryText.substring(0, 60)}${queryText.length > 60 ? '...' : ''}`;
+                const issueBody = `### Comparison / Verification Request
 
-**Query:**
+**Comparison Mode**
+
+other (describe in Additional Context)
+
+**Input Source**
+
+morphosource-api
+
+**Description**
+
 ${queryText}
 
----
-*This query was submitted via the MorphoSource Query System. A GitHub Actions workflow will automatically process this query and post results as a comment.*`;
-                
-                // Encode parameters for URL
+**Query / Dataset**
+
+\`\`\`
+${queryText}
+\`\`\`
+
+**Additional Context**
+
+Submitted via the legacy MorphoSource Query System (docs/query.html).`;
+
+                // These labels MUST match what .github/workflows/on-request-opened.yml
+                // checks for, or no automation runs:
+                //   request-type:comparison + request-creator:user
                 const params = new URLSearchParams({
                     title: issueTitle,
                     body: issueBody,
-                    labels: 'query-request'
+                    labels: 'request-type:comparison,request-creator:user,status:queued,source:docs-site'
                 });
                 
                 const issueUrl = `${NEW_ISSUE_URL}?${params.toString()}`;

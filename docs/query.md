@@ -1,26 +1,42 @@
 ---
 title: Submit a Query
-description: Ask AutoResearchClaw a question about MorphoSource specimens — the answer comes back as a comment on a GitHub issue.
+description: Ask AutoResearchClaw for a structured MorphoSource comparison or a free-text research query. Either way, a GitHub issue is created and a workflow processes it.
 hide:
   - toc
 ---
 
 # Submit a Query
 
-Type a natural-language question below. Clicking **Prepare to Submit Query**
-creates a pre-filled GitHub issue with the `query-request` label; an automation
-workflow picks it up, runs your search against MorphoSource, and posts results
-back as a comment.
+There are two ways to ask AutoResearchClaw a question. Both land in this repo
+as a GitHub issue with the right labels so the automation actually runs.
 
 <div class="grid cards" markdown>
 
-- :material-information-outline: **What you need** &mdash; a free GitHub account.
+-   :material-database-search: __Structured comparison request__
 
-- :material-clock-fast: **Typical latency** &mdash; 1–2 minutes from issue creation to result comment.
+    ---
 
-- :material-shield-check: **Where results live** &mdash; on the issue you just created (you'll be subscribed for notifications).
+    Pick a comparison mode, paste a CSV/query, get a checklist comment back.
+    This is the path that the existing workflows
+    ([on-request-opened.yml](https://github.com/johntrue15/MorphoClaw/blob/main/.github/workflows/on-request-opened.yml),
+    [verify-comparison.yml](https://github.com/johntrue15/MorphoClaw/blob/main/.github/workflows/verify-comparison.yml))
+    are wired to handle.
+
+    [:fontawesome-brands-github: Open the comparison-request form](https://github.com/johntrue15/MorphoClaw/issues/new?template=comparison_request.yml){ .md-button .md-button--primary }
+
+-   :material-chat-question: __Free-text research query__
+
+    ---
+
+    Type a plain-English question; the docs site pre-fills an issue with the
+    `request-type:comparison` and `request-creator:user` labels so the same
+    automation kicks in.
+
+    See the form below.
 
 </div>
+
+## Free-text submission
 
 <div class="arc-query" markdown>
 
@@ -138,7 +154,14 @@ back as a comment.
   const GITHUB_OWNER = "johntrue15";
   const GITHUB_REPO = "MorphoClaw";
   const NEW_ISSUE_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/issues/new`;
-  const WORKFLOW_URL  = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/query-processor.yml`;
+  // These labels match what .github/workflows/on-request-opened.yml expects.
+  // Without them the issue is created but no automation runs.
+  const ISSUE_LABELS = [
+    "request-type:comparison",
+    "request-creator:user",
+    "status:queued",
+    "source:docs-site",
+  ];
 
   const form = document.getElementById("queryForm");
   if (!form) return;
@@ -155,30 +178,54 @@ back as a comment.
     submitBtn.textContent = "Preparing…";
 
     try {
-      const title = `Query: ${text.substring(0, 50)}${text.length > 50 ? "…" : ""}`;
+      const title = `Comparison: ${text.substring(0, 60)}${text.length > 60 ? "…" : ""}`;
+      // Body matches the field IDs the labeler / initial-comments workflows
+      // look for in the structured template, so the automation can still
+      // parse this free-text issue cleanly.
       const body = [
-        "## MorphoSource Query Submission",
+        "### Comparison / Verification Request",
         "",
-        "**Query:**",
+        "**Comparison Mode**",
+        "",
+        "other (describe in Additional Context)",
+        "",
+        "**Input Source**",
+        "",
+        "morphosource-api",
+        "",
+        "**Description**",
+        "",
         text,
         "",
-        "---",
-        "*Submitted via the AutoResearchClaw docs site. A GitHub Actions workflow will process this query and post results as a comment.*",
+        "**Query / Dataset**",
+        "",
+        "```",
+        text,
+        "```",
+        "",
+        "**Additional Context**",
+        "",
+        "Submitted via the AutoResearchClaw docs site (free-text path).",
       ].join("\n");
 
-      const params = new URLSearchParams({ title, body, labels: "query-request" });
+      const params = new URLSearchParams({
+        title,
+        body,
+        labels: ISSUE_LABELS.join(","),
+      });
       const issueUrl = `${NEW_ISSUE_URL}?${params.toString()}`;
 
       statusDiv.hidden = false;
       statusDiv.className = "arc-status success";
       statusDiv.innerHTML =
         "<strong>Ready to submit your query.</strong><br/>" +
-        "Open the GitHub issue form below; clicking <em>Submit new issue</em> kicks off the workflow.";
+        "Click the link below to open the pre-filled GitHub issue. " +
+        "Clicking <em>Submit new issue</em> triggers the comparison-request automation.";
 
       workflowLinkDiv.hidden = false;
       workflowLinkDiv.innerHTML =
         `<a href="${issueUrl}" target="_blank" rel="noopener">Open the pre-filled GitHub issue &rarr;</a>` +
-        `<br/><small>Alternative: <a href="${WORKFLOW_URL}" target="_blank" rel="noopener">manually trigger the workflow &rarr;</a></small>`;
+        `<br/><small>Prefer the structured form? <a href="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/issues/new?template=comparison_request.yml" target="_blank" rel="noopener">Use the comparison-request template &rarr;</a></small>`;
     } catch (err) {
       statusDiv.hidden = false;
       statusDiv.className = "arc-status error";
@@ -207,18 +254,30 @@ sequenceDiagram
     participant U as You
     participant D as Docs site (this page)
     participant GH as GitHub Issues
-    participant WF as on-request-opened.yml
-    participant API as MorphoSource API
+    participant H as on-request-opened.yml
+    participant L as request-labeler.yml
+    participant I as request-initial-comments.yml
+    participant N as request-notify-admin.yml
 
     U->>D: Type query, click submit
-    D->>GH: Pre-fills issue form (label: query-request)
+    D->>GH: Pre-fills issue (labels: request-type:comparison, request-creator:user, status:queued)
     U->>GH: Confirms issue creation
-    GH->>WF: Issue opened event
-    WF->>API: query_formatter → MorphoSource search
-    API-->>WF: Search results JSON
-    WF->>GH: Post results as comment
-    GH-->>U: Notification
+    GH->>H: Issue opened event
+    H->>L: Dispatch labeler
+    H->>I: Dispatch initial comments
+    H->>N: Notify admin
+    L-->>GH: Adds workflow labels
+    I-->>GH: Posts progress checklist comment
+    N-->>GH: Pings maintainers
 ```
+
+!!! tip "Why both labels matter"
+    The handler at
+    [`.github/workflows/on-request-opened.yml`](https://github.com/johntrue15/MorphoClaw/blob/main/.github/workflows/on-request-opened.yml)
+    only fires when **both** `request-type:comparison` **and** `request-creator:user`
+    are present on the issue. The docs form sets them automatically so the
+    automation runs on every submission, not just on issues opened via the
+    structured template.
 
 See the [Query System Guide](QUERY_SYSTEM_GUIDE.md) for the full pipeline, the
 [Submission Guide](QUERY_SUBMISSION_GUIDE.md) for formatting tips, and the
