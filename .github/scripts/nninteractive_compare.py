@@ -394,6 +394,65 @@ def _dicom_to_nifti(dicom_dir: Path, output: Path) -> dict:
     return {"output_path": str(output), "size": output.stat().st_size}
 
 
+# ---------------------------------------------------------------------------
+# Public, importable helpers (used by orchestrators that don't want to shell
+# out to ``run_comparison``). Each tries the fast in-process path first and
+# falls back to the subprocess path when SimpleITK/VTK aren't available in
+# the calling interpreter.
+# ---------------------------------------------------------------------------
+
+
+def voxelize_mesh_to_labelmap(reference_volume: Path, mesh: Path,
+                              output: Path,
+                              fill_value: int = 1,
+                              backend: str = "auto") -> dict:
+    """Voxelize *mesh* onto *reference_volume*'s grid.
+
+    Tries an in-process call to :func:`voxelize_mesh_vtk.voxelize` first
+    (zero subprocess overhead — the caller is presumably already in the
+    nnInteractive venv). If SimpleITK/VTK can't be imported, falls back
+    to the existing subprocess paths via the venv's Python.
+    """
+    backend = (backend or "auto").lower()
+    if backend in ("auto", "vtk"):
+        try:
+            from voxelize_mesh_vtk import voxelize as _vox_inproc
+            log.info("Voxelizing in-process via voxelize_mesh_vtk.voxelize")
+            return _vox_inproc(
+                reference_volume=Path(reference_volume),
+                mesh_path=Path(mesh),
+                output_path=Path(output),
+                fill_value=int(fill_value),
+            )
+        except ImportError as exc:
+            log.info("In-process voxelize unavailable (%s) — falling back to subprocess",
+                     exc)
+    return _voxelize(reference_volume, mesh, output, backend=backend)
+
+
+def crop_volume_around_mesh(reference_volume: Path, mesh: Path,
+                            output: Path,
+                            margin_mm: float = 5.0) -> dict:
+    """Crop *reference_volume* to ``mesh.bbox + margin_mm`` (in mm).
+
+    Tries an in-process call to :func:`crop_around_mesh.crop` first; falls
+    back to the subprocess path when SimpleITK isn't importable here.
+    """
+    try:
+        from crop_around_mesh import crop as _crop_inproc
+        log.info("Cropping in-process via crop_around_mesh.crop")
+        return _crop_inproc(
+            reference_volume=Path(reference_volume),
+            output_path=Path(output),
+            margin_mm=float(margin_mm),
+            mesh_path=Path(mesh),
+        )
+    except ImportError as exc:
+        log.info("In-process crop unavailable (%s) — falling back to subprocess",
+                 exc)
+        return _crop_volume(reference_volume, mesh, output, margin_mm)
+
+
 def _crop_volume(reference_volume: Path, mesh: Path,
                  output: Path, margin_mm: float) -> dict:
     """Crop a volume to mesh bbox + margin (mm) using SimpleITK."""
