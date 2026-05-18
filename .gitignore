@@ -80,3 +80,7 @@ deep-research-report.md
 
 # Large data files (use Git LFS or download separately)
 data/json/morphosource_data_complete_compare.json
+
+# MkDocs build output
+site/
+

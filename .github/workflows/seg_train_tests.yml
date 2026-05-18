@@ -1,0 +1,73 @@
+name: Seg-Train Smoke Tests
+
+# Runs the full testing ladder for the iterative segmentation training
+# package (`metadata_to_morphsource.seg_train`):
+#
+#   Tier 1: pure-Python unit tests (ledger / router / dataset / paper / CLI)
+#   Tier 2: CLI surface checks (--help, summary, export round-trip)
+#   Tier 3: integration test (synthetic NIfTI volumes + mocked nnInteractive
+#           paint loop and Slicer voxelizer) — verifies the iterative
+#           orchestrator wiring without needing the actual heavy deps.
+#
+# Tier 3 is gated on a healthy numpy + SimpleITK install, which is always
+# available in CI but commonly broken on local macOS Anaconda installs.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'metadata_to_morphsource/seg_train/**'
+      - 'Tests/test_seg_train_*.py'
+      - 'Tests/smoke_seg_train.sh'
+      - '.github/workflows/seg_train_tests.yml'
+      - '.github/scripts/install_seg_train_extras.sh'
+      - 'pytest.ini'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'metadata_to_morphsource/seg_train/**'
+      - 'Tests/test_seg_train_*.py'
+      - 'Tests/smoke_seg_train.sh'
+      - '.github/workflows/seg_train_tests.yml'
+      - '.github/scripts/install_seg_train_extras.sh'
+      - 'pytest.ini'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: seg_train smoke (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install minimal test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # numpy + SimpleITK are needed by Tier 3 (synthetic integration);
+          # the Tier 1 prepare unit tests run without them.
+          pip install pytest 'numpy>=1.24,<2.2' 'SimpleITK>=2.3'
+
+      - name: Run smoke tests (Tier 1 + 2 + 3)
+        env:
+          PYTHON: python
+          SEG_TRAIN_PROBE_TIMEOUT: '180'
+        run: |
+          bash Tests/smoke_seg_train.sh --integration --include-numpy
+
+      - name: Show ledger artifact (last lines)
+        if: always()
+        run: |
+          # The smoke script writes a temporary ledger; this just dumps
+          # the in-repo example outputs if any leaked into the workspace.
+          find . -maxdepth 4 -name 'ledger.jsonl' -print 2>/dev/null | head -5 || true

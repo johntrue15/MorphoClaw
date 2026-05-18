@@ -1,0 +1,78 @@
+name: "Comparison Request Initial Comments"
+
+# Posts the verification-progress checklist comment (with emoji status) and a
+# help comment listing supported slash commands when a new comparison request
+# is opened. Idempotent: re-running on the same issue updates the comments in
+# place rather than appending duplicates.
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number"
+        required: true
+  workflow_call:
+    inputs:
+      issue_number:
+        description: "Issue number"
+        required: true
+        type: string
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  initial_comments:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect inputs
+        id: collect_inputs
+        shell: bash
+        env:
+          ISSUE_NUMBER_INPUT: ${{ inputs.issue_number || github.event.inputs.issue_number }}
+        run: |
+          if [[ -z "$ISSUE_NUMBER_INPUT" || "$ISSUE_NUMBER_INPUT" == "null" ]]; then
+            echo "::error ::issue_number not provided"
+            exit 1
+          fi
+          echo "issue_number=$ISSUE_NUMBER_INPUT" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+
+      - name: Locate existing progress comment
+        id: fc_progress
+        uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e # v3.1.0
+        with:
+          issue-number: ${{ steps.collect_inputs.outputs.issue_number }}
+          comment-author: "github-actions[bot]"
+          body-includes: "Verification progress"
+
+      - name: Post or update verification progress checklist
+        uses: ./.github/actions/comment-progress
+        with:
+          issue-number: ${{ steps.collect_inputs.outputs.issue_number }}
+          comment-id: ${{ steps.fc_progress.outputs.comment-id }}
+          validate_template: "✅"
+          parse_fields: "✅"
+          apply_labels: "✅"
+          notify_admins: "⏳"
+          run_comparison: ""
+          verify_results: ""
+          publish_report: ""
+
+      - name: Locate existing commands comment
+        id: fc_commands
+        uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e # v3.1.0
+        with:
+          issue-number: ${{ steps.collect_inputs.outputs.issue_number }}
+          comment-author: "github-actions[bot]"
+          body-includes: "### Supported Issue Commands"
+
+      - name: Post or update issue-commands help comment
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4.0.0
+        with:
+          comment-id: ${{ steps.fc_commands.outputs.comment-id }}
+          issue-number: ${{ steps.collect_inputs.outputs.issue_number }}
+          body-path: ".github/issue-commands.md"
+          edit-mode: replace

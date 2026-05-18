@@ -1,0 +1,161 @@
+name: Seg-Train Live Chameleon Stapes
+
+# Real end-to-end smoke test of `metadata_to_morphsource.seg_train`
+# on the canonical chameleon-stapes pair (Chamaeleo calyptratus,
+# uf:herp:191369). Unlike `seg_train_tests.yml` (synthetic Tier-3),
+# this runs against actual MorphoSource downloads, real Slicer/VTK
+# voxelisation, and the real nnInteractive paint loop. It exists to
+# validate the trainer wiring on live data before kicking off a
+# multi-round training campaign.
+#
+# Manual dispatch only — costs OpenAI quota and takes ~5–15 minutes
+# on the self-hosted runner.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_name:
+        description: 'Run directory under runs/ (also the artifact name)'
+        required: true
+        type: string
+        default: 'chameleon_stapes_live'
+      paper_tag:
+        description: 'Paper tag stored in every ledger row'
+        required: true
+        type: string
+        default: 'chameleon_stapes_live'
+      max_paint_steps:
+        description: 'Max LLM iterations in the paint loop'
+        required: false
+        type: number
+        default: 6
+      crop_mm:
+        description: 'CT crop margin around the GT mesh in mm'
+        required: false
+        type: number
+        default: 4
+      voxelize_backend:
+        description: 'GT-mesh voxelisation backend'
+        required: false
+        type: choice
+        options:
+          - vtk
+          - slicer
+          - auto
+        default: vtk
+      skip_training:
+        description: 'Skip the student-training step (paint-loop only)'
+        required: false
+        type: boolean
+        default: false
+      student_epochs:
+        description: 'Student training epochs (small for the smoke run)'
+        required: false
+        type: number
+        default: 1
+
+concurrency:
+  group: seg-train-live-${{ github.event.inputs.run_name }}
+  cancel-in-progress: false
+
+jobs:
+  live:
+    name: Real chameleon-stapes round
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      issues: write
+
+    env:
+      RUN_DIR: runs/${{ github.event.inputs.run_name }}
+      PAPER_TAG: ${{ github.event.inputs.paper_tag }}
+      MAX_STEPS: ${{ github.event.inputs.max_paint_steps }}
+      CROP_MM: ${{ github.event.inputs.crop_mm }}
+      VOXELIZE_BACKEND: ${{ github.event.inputs.voxelize_backend }}
+      SKIP_TRAINING: ${{ github.event.inputs.skip_training && '1' || '0' }}
+      STUDENT_EPOCHS: ${{ github.event.inputs.student_epochs }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      MORPHOSOURCE_API_KEY: ${{ secrets.MORPHOSOURCE_API_KEY }}
+      NNINTERACTIVE_VISION_MODEL: gpt-4o
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Print runner info
+        run: |
+          echo "Host: $(hostname)"
+          echo "OS:   $(uname -a)"
+          if command -v nvidia-smi >/dev/null 2>&1; then
+            nvidia-smi || true
+          else
+            echo "No NVIDIA GPU — student will run on MPS / CPU"
+          fi
+
+      - name: Bootstrap nnInteractive (idempotent)
+        run: |
+          NNI_HOME="${NNINTERACTIVE_HOME:-$HOME/.autoresearchclaw/nninteractive}"
+          if [ -x "$NNI_HOME/bin/python" ] && \
+             "$NNI_HOME/bin/python" -c "import nnInteractive" >/dev/null 2>&1; then
+            echo "nnInteractive venv already present at $NNI_HOME"
+          else
+            chmod +x .github/scripts/install_nninteractive.sh
+            .github/scripts/install_nninteractive.sh
+          fi
+
+      - name: Bootstrap MONAI extras (idempotent)
+        run: |
+          chmod +x .github/scripts/install_seg_train_extras.sh
+          .github/scripts/install_seg_train_extras.sh
+
+      - name: Run live chameleon-stapes round
+        env:
+          RUN_DIR: ${{ env.RUN_DIR }}
+        run: |
+          chmod +x Tests/test_chameleon_stapes_iterative.sh
+          mkdir -p "$RUN_DIR"
+          # Re-export so the test script sees the env-controlled defaults.
+          export RUN_DIR PAPER_TAG MAX_STEPS CROP_MM \
+                 VOXELIZE_BACKEND SKIP_TRAINING STUDENT_EPOCHS
+          Tests/test_chameleon_stapes_iterative.sh
+
+      - name: Tail key artefacts to step summary
+        if: always()
+        run: |
+          summary="$GITHUB_STEP_SUMMARY"
+          {
+            echo "## Live chameleon-stapes round"
+            echo
+            echo "Run dir: \`$RUN_DIR\`"
+            echo
+            if [ -f "$RUN_DIR/round_000/round_report.json" ]; then
+              echo '### Round 0 report'
+              echo
+              echo '```json'
+              cat "$RUN_DIR/round_000/round_report.json"
+              echo
+              echo '```'
+            fi
+            if [ -f "$RUN_DIR/paper/paper_summary.md" ]; then
+              echo
+              echo '### Paper summary'
+              echo
+              cat "$RUN_DIR/paper/paper_summary.md"
+            fi
+          } >> "$summary"
+
+      - name: Upload artefacts (ledger / paper / round_*)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.inputs.run_name }}
+          path: |
+            ${{ env.RUN_DIR }}/ledger/**
+            ${{ env.RUN_DIR }}/paper/**
+            ${{ env.RUN_DIR }}/round_*/round_report.json
+            ${{ env.RUN_DIR }}/round_*/**/nninteractive/*_nni_summary.json
+            ${{ env.RUN_DIR }}/round_*/**/nninteractive/*_nni_labelmap.nii.gz
+            ${{ env.RUN_DIR }}/round_*/**/gt_voxelized.nii.gz
+            ${{ env.RUN_DIR }}/specimens.json
+          if-no-files-found: warn
+          retention-days: 14

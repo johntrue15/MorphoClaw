@@ -170,7 +170,7 @@ If your first query is too specific and returns no results:
 ## 📚 Additional Resources
 
 - [Complete Query System Guide](QUERY_SYSTEM_GUIDE.md)
-- [Repository README](../README.md)
+- [Repository README](https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/README.md)
 - [GitHub Issues Help](https://docs.github.com/en/issues)
 - [MorphoSource](https://www.morphosource.org)
 

@@ -1,0 +1,111 @@
+name: "Notify Maintainers of Comparison Request"
+
+# Posts a comment that tags the maintainers (so they get a GitHub notification)
+# and, if SMTP secrets are configured, sends an email to the addresses listed
+# in the `ADMIN_EMAILS` repository variable.
+#
+# This is a best-effort notification: missing SMTP secrets are not fatal.
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number"
+        required: true
+  workflow_call:
+    inputs:
+      issue_number:
+        description: "Issue number"
+        required: true
+        type: string
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect inputs
+        id: collect_inputs
+        shell: bash
+        env:
+          ISSUE_NUMBER_INPUT: ${{ inputs.issue_number || github.event.inputs.issue_number }}
+        run: |
+          if [[ -z "$ISSUE_NUMBER_INPUT" || "$ISSUE_NUMBER_INPUT" == "null" ]]; then
+            echo "::error ::issue_number not provided"
+            exit 1
+          fi
+          echo "issue_number=$ISSUE_NUMBER_INPUT" >> "$GITHUB_OUTPUT"
+
+      - name: Comment tagging maintainers
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4.0.0
+        with:
+          issue-number: ${{ steps.collect_inputs.outputs.issue_number }}
+          body: |
+            👋 New comparison request received.
+
+            ${{ vars.ADMIN_HANDLE != '' && vars.ADMIN_HANDLE || '@johntrue15' }}, please review and run `/approve` to unlock the automated pipeline.
+
+            <sub>The verification checklist above will update with emoji status as the pipeline progresses.</sub>
+
+      - name: Probe SMTP credentials
+        id: probe_smtp
+        env:
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+        shell: bash
+        run: |
+          if [[ -n "$MAIL_USERNAME" && -n "$MAIL_PASSWORD" ]]; then
+            echo "has_creds=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_creds=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send email to maintainers
+        if: ${{ vars.ADMIN_EMAILS != '' && steps.probe_smtp.outputs.has_creds == 'true' }}
+        uses: dawidd6/action-send-mail@611879133a9569642c41be66f4a323286e9b8a3b # v3.12.0
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          from: ${{ github.event.repository.name }} <${{ secrets.MAIL_USERNAME }}>
+          to: ${{ vars.ADMIN_EMAILS }}
+          subject:
+            "[${{ github.event.repository.name }}] New comparison request: issue #${{ steps.collect_inputs.outputs.issue_number }}"
+          body: |
+            A new comparison request was opened.
+
+            See: https://github.com/${{ github.repository }}/issues/${{ steps.collect_inputs.outputs.issue_number }}
+
+            Use `/approve` on the issue to unlock the automated pipeline.
+
+      # Re-render the progress checklist with `notify_admins=✅` so the issue
+      # reflects that the maintainers have been pinged. We look up the
+      # existing comment to update in place.
+      - uses: actions/checkout@v5
+
+      - name: Locate existing progress comment
+        id: fc_progress
+        uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e # v3.1.0
+        with:
+          issue-number: ${{ steps.collect_inputs.outputs.issue_number }}
+          comment-author: "github-actions[bot]"
+          body-includes: "Verification progress"
+
+      - name: Update progress checklist (notify_admins ✅)
+        if: ${{ steps.fc_progress.outputs.comment-id != '' }}
+        uses: ./.github/actions/comment-progress
+        with:
+          issue-number: ${{ steps.collect_inputs.outputs.issue_number }}
+          comment-id: ${{ steps.fc_progress.outputs.comment-id }}
+          validate_template: "✅"
+          parse_fields: "✅"
+          apply_labels: "✅"
+          notify_admins: "✅"
+          run_comparison: ""
+          verify_results: ""
+          publish_report: ""

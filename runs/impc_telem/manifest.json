@@ -1,0 +1,23 @@
+{
+  "run_id": "20260518T171930Z_mouse_skull_b694af",
+  "label": "mouse_skull",
+  "started_utc": "2026-05-18T17:19:30.833361+00:00",
+  "started_unix": 1779124770.833236,
+  "args": {
+    "volume": "IMPC_sample_data",
+    "reset_first": true,
+    "intensity_percentile": 99.5,
+    "max_candidates": 50000,
+    "max_steps": 5,
+    "min_delta": 200,
+    "patience": 3,
+    "max_explosion_frac": 0.4,
+    "no_new_segment_per_click": false,
+    "no_screenshots": false,
+    "no_export_segmentation": false,
+    "label": "mouse_skull",
+    "out_dir": "runs/impc_telem"
+  },
+  "host": "M4s-Mac-mini.local",
+  "user": "m4macmini"
+}

@@ -1,0 +1,217 @@
+name: "Verify Comparison Request"
+
+# Runs the metadata-to-MorphoSource verification pipeline on demand for a
+# specific issue. Triggered by the `/verify` slash command (which dispatches
+# this workflow via `gh workflow run`) or manually via the GitHub UI.
+#
+# The job updates the verification-progress comment on the issue at every
+# stage, moving emoji markers from ⏳ to ✅ (or ❌ if a stage fails) and
+# rotates the `status:*` label to match.
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number to verify"
+        required: true
+      actor:
+        description: "User who initiated /verify (for audit trail)"
+        required: false
+        default: ""
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect inputs
+        id: collect_inputs
+        shell: bash
+        run: |
+          echo "issue_number=${{ inputs.issue_number }}" >> "$GITHUB_OUTPUT"
+          echo "actor=${{ inputs.actor }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+
+      - name: "Mark status: running"
+        uses: ./.github/actions/update-status-label
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue_number: ${{ steps.collect_inputs.outputs.issue_number }}
+          status: running
+
+      - name: Locate progress comment
+        id: fc_progress
+        uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e # v3.1.0
+        with:
+          issue-number: ${{ steps.collect_inputs.outputs.issue_number }}
+          comment-author: "github-actions[bot]"
+          body-includes: "Verification progress"
+
+      - name: Progress → run_comparison ⏳
+        uses: ./.github/actions/comment-progress
+        with:
+          issue-number: ${{ steps.collect_inputs.outputs.issue_number }}
+          comment-id: ${{ steps.fc_progress.outputs.comment-id }}
+          validate_template: "✅"
+          parse_fields: "✅"
+          apply_labels: "✅"
+          notify_admins: "✅"
+          run_comparison: "⏳"
+          verify_results: ""
+          publish_report: ""
+
+      - name: Extract issue fields
+        id: extract
+        uses: ./.github/actions/extract-issue-fields
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          issue_number: ${{ steps.collect_inputs.outputs.issue_number }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Materialize query CSV from issue
+        id: materialize
+        shell: bash
+        env:
+          QUERY: ${{ steps.extract.outputs.query_csv }}
+          ISSUE_NUMBER: ${{ steps.collect_inputs.outputs.issue_number }}
+        run: |
+          mkdir -p verification_runs
+          path="verification_runs/issue-${ISSUE_NUMBER}.csv"
+          printf '%s\n' "$QUERY" > "$path"
+          echo "csv_path=$path" >> "$GITHUB_OUTPUT"
+          echo "First 5 lines of materialized query:"
+          head -n 5 "$path" || true
+
+      - name: Run comparison (stub)
+        id: run_comparison
+        shell: bash
+        env:
+          MODE: ${{ steps.extract.outputs.comparison_mode }}
+          CSV_PATH: ${{ steps.materialize.outputs.csv_path }}
+          ISSUE_NUMBER: ${{ steps.collect_inputs.outputs.issue_number }}
+        run: |
+          set -e
+          echo "Comparison mode: $MODE"
+          echo "Input CSV:       $CSV_PATH"
+          out_dir="verification_runs/issue-${ISSUE_NUMBER}"
+          mkdir -p "$out_dir"
+
+          # Wire in the appropriate entrypoint per mode. These are intentionally
+          # tolerant of missing files / dependencies during the initial rollout:
+          # the workflow exists to *plumb* the IssueOps signalling, while the
+          # individual scripts are evolved to take a CSV + output dir.
+          case "$MODE" in
+            verify_pixel_spacing)
+              if [ -f verify_pixel_spacing.py ]; then
+                python verify_pixel_spacing.py --input "$CSV_PATH" --output "$out_dir" || \
+                  echo "verify_pixel_spacing.py exited non-zero (stub run)."
+              else
+                echo "verify_pixel_spacing.py not found; skipping."
+              fi
+              ;;
+            show_me_scans|tell_me_how_many_scans|find_me_fossils|compare_metadata)
+              if [ -f compare.py ]; then
+                python compare.py --mode "$MODE" --input "$CSV_PATH" --output "$out_dir" || \
+                  echo "compare.py exited non-zero (stub run)."
+              else
+                echo "compare.py not found; skipping."
+              fi
+              ;;
+            *)
+              echo "Unknown or 'other' mode; emitting placeholder report."
+              ;;
+          esac
+
+          # Always produce at least a stub report so subsequent steps have
+          # something to publish.
+          report="$out_dir/report.md"
+          {
+            echo "# Verification report for issue #$ISSUE_NUMBER"
+            echo
+            echo "* Mode: \`$MODE\`"
+            echo "* Input CSV: \`$CSV_PATH\`"
+            echo "* Run: $GITHUB_RUN_ID"
+          } > "$report"
+          echo "report=$report" >> "$GITHUB_OUTPUT"
+
+      - name: Progress → verify_results ⏳
+        if: ${{ always() }}
+        uses: ./.github/actions/comment-progress
+        with:
+          issue-number: ${{ steps.collect_inputs.outputs.issue_number }}
+          comment-id: ${{ steps.fc_progress.outputs.comment-id }}
+          validate_template: "✅"
+          parse_fields: "✅"
+          apply_labels: "✅"
+          notify_admins: "✅"
+          run_comparison: ${{ steps.run_comparison.outcome == 'success' && '✅' || '❌' }}
+          verify_results: "⏳"
+          publish_report: ""
+
+      - name: Verify results (sanity checks)
+        id: verify_results
+        if: ${{ steps.run_comparison.outcome == 'success' }}
+        shell: bash
+        env:
+          REPORT: ${{ steps.run_comparison.outputs.report }}
+          EXPECTED: ${{ steps.extract.outputs.expected_results_count }}
+        run: |
+          if [ ! -s "$REPORT" ]; then
+            echo "::error ::Report file is empty: $REPORT"
+            exit 1
+          fi
+          if [ -n "$EXPECTED" ]; then
+            echo "Expected ~$EXPECTED rows; report file: $REPORT"
+          fi
+          echo "Report ok."
+
+      - name: Publish report comment
+        if: ${{ steps.run_comparison.outcome == 'success' && steps.verify_results.outcome == 'success' }}
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4.0.0
+        with:
+          issue-number: ${{ steps.collect_inputs.outputs.issue_number }}
+          body-path: ${{ steps.run_comparison.outputs.report }}
+
+      - name: "Mark status: completed"
+        if: ${{ steps.run_comparison.outcome == 'success' && steps.verify_results.outcome == 'success' }}
+        uses: ./.github/actions/update-status-label
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue_number: ${{ steps.collect_inputs.outputs.issue_number }}
+          status: completed
+
+      - name: "Mark status: failed"
+        if: ${{ failure() }}
+        uses: ./.github/actions/update-status-label
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue_number: ${{ steps.collect_inputs.outputs.issue_number }}
+          status: failed
+
+      - name: Final progress checklist
+        if: ${{ always() }}
+        uses: ./.github/actions/comment-progress
+        with:
+          issue-number: ${{ steps.collect_inputs.outputs.issue_number }}
+          comment-id: ${{ steps.fc_progress.outputs.comment-id }}
+          validate_template: "✅"
+          parse_fields: "✅"
+          apply_labels: "✅"
+          notify_admins: "✅"
+          run_comparison: ${{ steps.run_comparison.outcome == 'success' && '✅' || '❌' }}
+          verify_results: ${{ steps.verify_results.outcome == 'success' && '✅' || (steps.run_comparison.outcome == 'success' && '❌' || '⚪') }}
+          publish_report: ${{ (steps.run_comparison.outcome == 'success' && steps.verify_results.outcome == 'success') && '✅' || '⚪' }}

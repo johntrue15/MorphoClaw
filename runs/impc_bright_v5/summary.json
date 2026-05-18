@@ -1,0 +1,212 @@
+{
+  "volume": "IMPC_sample_data",
+  "shape_kji": [
+    421,
+    258,
+    259
+  ],
+  "threshold": 125.0,
+  "n_candidates_initial": 50000,
+  "steps": 8,
+  "history": [
+    {
+      "status": "ok",
+      "picked_ijk": [
+        161,
+        93,
+        147
+      ],
+      "intensity": 255.0,
+      "voxels_before": 0,
+      "voxels_after": 23814,
+      "delta": 23814,
+      "new_voxels_at_picked": 1,
+      "click_positive": true,
+      "skipped_inside": 0,
+      "candidates_left": 49999,
+      "click_seconds": 0.769,
+      "made_new_segment": false,
+      "segment_id": "Segment_1",
+      "segment_voxels": 23814,
+      "n_segments_before": 0,
+      "n_segments_after": 1,
+      "_dt_s": 1.21
+    },
+    {
+      "status": "ok",
+      "picked_ijk": [
+        109,
+        89,
+        159
+      ],
+      "intensity": 226.0,
+      "voxels_before": 23814,
+      "voxels_after": 60971,
+      "delta": 37157,
+      "new_voxels_at_picked": 1,
+      "click_positive": true,
+      "skipped_inside": 107,
+      "candidates_left": 49891,
+      "click_seconds": 1.006,
+      "made_new_segment": true,
+      "segment_id": "Segment_2",
+      "segment_voxels": 37157,
+      "n_segments_before": 1,
+      "n_segments_after": 2,
+      "_dt_s": 1.693
+    },
+    {
+      "status": "ok",
+      "picked_ijk": [
+        156,
+        110,
+        168
+      ],
+      "intensity": 218.0,
+      "voxels_before": 60971,
+      "voxels_after": 151835,
+      "delta": 90864,
+      "new_voxels_at_picked": 1,
+      "click_positive": true,
+      "skipped_inside": 466,
+      "candidates_left": 49424,
+      "click_seconds": 1.038,
+      "made_new_segment": true,
+      "segment_id": "Segment_3",
+      "segment_voxels": 148653,
+      "n_segments_before": 2,
+      "n_segments_after": 3,
+      "_dt_s": 1.986
+    },
+    {
+      "status": "ok",
+      "picked_ijk": [
+        164,
+        152,
+        278
+      ],
+      "intensity": 185.0,
+      "voxels_before": 151835,
+      "voxels_after": 155109,
+      "delta": 3274,
+      "new_voxels_at_picked": 1,
+      "click_positive": true,
+      "skipped_inside": 15410,
+      "candidates_left": 34013,
+      "click_seconds": 1.083,
+      "made_new_segment": true,
+      "segment_id": "Segment_4",
+      "segment_voxels": 3274,
+      "n_segments_before": 3,
+      "n_segments_after": 4,
+      "_dt_s": 2.242
+    },
+    {
+      "status": "ok",
+      "picked_ijk": [
+        150,
+        106,
+        202
+      ],
+      "intensity": 183.0,
+      "voxels_before": 155109,
+      "voxels_after": 155816,
+      "delta": 707,
+      "new_voxels_at_picked": 1,
+      "click_positive": true,
+      "skipped_inside": 1766,
+      "candidates_left": 32246,
+      "click_seconds": 1.153,
+      "made_new_segment": true,
+      "segment_id": "Segment_5",
+      "segment_voxels": 707,
+      "n_segments_before": 4,
+      "n_segments_after": 5,
+      "_dt_s": 2.548
+    },
+    {
+      "status": "ok",
+      "picked_ijk": [
+        130,
+        97,
+        214
+      ],
+      "intensity": 182.0,
+      "voxels_before": 155816,
+      "voxels_after": 167788,
+      "delta": 11972,
+      "new_voxels_at_picked": 1,
+      "click_positive": true,
+      "skipped_inside": 623,
+      "candidates_left": 31622,
+      "click_seconds": 1.139,
+      "made_new_segment": true,
+      "segment_id": "Segment_6",
+      "segment_voxels": 12355,
+      "n_segments_before": 5,
+      "n_segments_after": 6,
+      "_dt_s": 2.787
+    },
+    {
+      "status": "ok",
+      "picked_ijk": [
+        121,
+        132,
+        328
+      ],
+      "intensity": 179.0,
+      "voxels_before": 167788,
+      "voxels_after": 202458,
+      "delta": 34670,
+      "new_voxels_at_picked": 1,
+      "click_positive": true,
+      "skipped_inside": 4039,
+      "candidates_left": 27582,
+      "click_seconds": 1.176,
+      "made_new_segment": true,
+      "segment_id": "Segment_7",
+      "segment_voxels": 34670,
+      "n_segments_before": 6,
+      "n_segments_after": 7,
+      "_dt_s": 3.147
+    },
+    {
+      "status": "ok",
+      "picked_ijk": [
+        132,
+        144,
+        326
+      ],
+      "intensity": 177.0,
+      "voxels_before": 202458,
+      "voxels_after": 229123,
+      "delta": 26665,
+      "new_voxels_at_picked": 1,
+      "click_positive": true,
+      "skipped_inside": 2778,
+      "candidates_left": 24803,
+      "click_seconds": 1.185,
+      "made_new_segment": true,
+      "segment_id": "Segment_8",
+      "segment_voxels": 26665,
+      "n_segments_before": 7,
+      "n_segments_after": 8,
+      "_dt_s": 3.162
+    }
+  ],
+  "args": {
+    "volume": "IMPC_sample_data",
+    "reset_first": true,
+    "intensity_percentile": 99.5,
+    "max_candidates": 50000,
+    "max_steps": 8,
+    "min_delta": 200,
+    "patience": 3,
+    "max_explosion_frac": 0.4,
+    "no_new_segment_per_click": false,
+    "no_screenshots": false,
+    "out_dir": "runs/impc_bright_v5"
+  },
+  "final_voxel_count": 229123,
+  "final_voxel_fraction": 0.0081
+}

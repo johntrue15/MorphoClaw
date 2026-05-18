@@ -1,0 +1,58 @@
+{
+  "step": 0,
+  "metadata": {
+    "red_offset_mm": 6.929,
+    "red_orientation": "Coronal",
+    "yellow_offset_mm": 3.445,
+    "yellow_orientation": "Sagittal",
+    "green_offset_mm": 6.929,
+    "green_orientation": "Coronal",
+    "volume_name": "MRHead",
+    "volume_id": "vtkMRMLScalarVolumeNode2",
+    "dimensions_ijk": [
+      256,
+      256,
+      130
+    ],
+    "spacing_mm": [
+      1.0,
+      1.0,
+      1.3
+    ],
+    "ras_bounds": [
+      -87.29,
+      81.7,
+      -121.57,
+      134.43,
+      -138.71,
+      117.29
+    ],
+    "scalar_range": [
+      0.0,
+      279.0
+    ],
+    "scalar_type": "short",
+    "segmentation_voxel_count": 0,
+    "segmentation_nodes": [
+      {
+        "name": "Segmentation",
+        "n_segments": 0,
+        "voxel_count": 0
+      }
+    ],
+    "plugin_server": "http://0.0.0.0:1527",
+    "plugin_is_positive": true,
+    "_dt_s": 0.271
+  },
+  "llm_action": {
+    "action": "bbox",
+    "i0": 70,
+    "j0": 70,
+    "k0": 20,
+    "i1": 180,
+    "j1": 180,
+    "k1": 60,
+    "positive": true,
+    "rationale": "Initial bounding box to encompass the brain tissue visible in the axial, sagittal, and coronal views."
+  }
+}

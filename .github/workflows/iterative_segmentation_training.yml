@@ -1,0 +1,267 @@
+name: Iterative Segmentation Training
+
+# Runs one round of the iterative segmentation pipeline:
+#
+#   discover -> download -> (voxelize GT) -> nnInteractive paint loop ->
+#   (optional) student inference -> router decision -> train student ->
+#   export paper data
+#
+# All segmentation events are appended to the run's experiment ledger
+# (`runs/<run_name>/ledger/ledger.{jsonl,csv}`), the dataset manifest
+# is updated in place, and a paper-summary issue is posted.
+
+concurrency:
+  group: iterative-seg-${{ github.event.inputs.run_name || github.run_id }}
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_name:
+        description: 'Identifier for this experiment (used as the run directory)'
+        required: true
+        type: string
+        default: 'skull_v1'
+      paper_tag:
+        description: 'Paper tag grouping rounds for export'
+        required: true
+        type: string
+        default: 'chameleon_skull_v1'
+      goal:
+        description: 'Plain-English goal, e.g. "Segment the cranial bone"'
+        required: true
+        type: string
+        default: 'Segment the cranial bone'
+      query:
+        description: 'MorphoSource search query for `discover`'
+        required: false
+        type: string
+        default: 'skull mesh'
+      max_pairs:
+        description: 'Number of (CT, mesh) pairs to discover this round'
+        required: false
+        type: number
+        default: 8
+      require_taxonomy:
+        description: 'Optional taxonomy filter (e.g. "Chamaeleo")'
+        required: false
+        type: string
+        default: ''
+      student_artifact:
+        description: 'Path to *.artifact.json from a prior round (leave blank for Round 0)'
+        required: false
+        type: string
+        default: ''
+      max_paint_steps:
+        description: 'Max LLM iterations in the nnInteractive paint loop'
+        required: false
+        type: number
+        default: 12
+      student_epochs:
+        description: 'Epochs for student training at end of round'
+        required: false
+        type: number
+        default: 30
+      skip_training:
+        description: 'Skip student training (data-collection-only round)'
+        required: false
+        type: boolean
+        default: false
+      router_min_confidence:
+        description: 'Mean foreground confidence below which student is overridden'
+        required: false
+        type: number
+        default: 0.85
+      router_max_entropy:
+        description: 'Mean entropy above which student is overridden'
+        required: false
+        type: number
+        default: 0.35
+      graduation_dice:
+        description: 'Validation Dice required to graduate the student'
+        required: false
+        type: number
+        default: 0.85
+
+jobs:
+  iterate:
+    name: Iterative training round
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      issues: write
+
+    env:
+      RUN_DIR: runs/${{ github.event.inputs.run_name }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      MORPHOSOURCE_API_KEY: ${{ secrets.MORPHOSOURCE_API_KEY }}
+      NNINTERACTIVE_VISION_MODEL: gpt-4o
+      PAPER_TAG: ${{ github.event.inputs.paper_tag }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Print runner info
+        run: |
+          echo "Host: $(hostname)"
+          echo "OS:   $(uname -a)"
+          if command -v nvidia-smi >/dev/null 2>&1; then
+            nvidia-smi || true
+          else
+            echo "No NVIDIA GPU — student will run on MPS / CPU"
+          fi
+
+      - name: Bootstrap nnInteractive (idempotent)
+        run: |
+          NNI_HOME="${NNINTERACTIVE_HOME:-$HOME/.autoresearchclaw/nninteractive}"
+          if [ -x "$NNI_HOME/bin/python" ] && \
+             "$NNI_HOME/bin/python" -c "import nnInteractive" >/dev/null 2>&1; then
+            echo "nnInteractive venv already present at $NNI_HOME"
+          else
+            echo "Bootstrapping nnInteractive at $NNI_HOME"
+            chmod +x .github/scripts/install_nninteractive.sh
+            .github/scripts/install_nninteractive.sh
+          fi
+
+      - name: Bootstrap MONAI extras (idempotent)
+        run: |
+          chmod +x .github/scripts/install_seg_train_extras.sh
+          .github/scripts/install_seg_train_extras.sh
+
+      - name: Set up Python (parent env) for orchestration
+        run: |
+          export PATH="/opt/anaconda3/bin:$PATH"
+          python3 --version
+          python3 -m pip install --quiet requests python-dotenv
+
+      - name: Discover specimens
+        id: discover
+        env:
+          PATH: /opt/anaconda3/bin:/usr/local/bin:/usr/bin:/bin
+        run: |
+          mkdir -p "$RUN_DIR"
+          DISCOVER_ARGS=(
+            --query "${{ github.event.inputs.query }}"
+            --max-pairs "${{ github.event.inputs.max_pairs || 8 }}"
+            --output "$RUN_DIR/specimens.json"
+            --download-dir "$RUN_DIR/downloads"
+          )
+          if [ -n "${{ github.event.inputs.require_taxonomy }}" ]; then
+            DISCOVER_ARGS+=(--require-taxonomy "${{ github.event.inputs.require_taxonomy }}")
+          fi
+          set +e
+          python3 -m metadata_to_morphsource.seg_train discover "${DISCOVER_ARGS[@]}" \
+              > "$RUN_DIR/discover.log" 2>&1
+          DISCOVER_EXIT=$?
+          tail -40 "$RUN_DIR/discover.log" || true
+          if [ "$DISCOVER_EXIT" -ne 0 ]; then
+            echo "::warning ::No specimens discovered; aborting run."
+            exit $DISCOVER_EXIT
+          fi
+          echo "specimen_count=$(jq length "$RUN_DIR/specimens.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Run iterative round
+        id: round
+        env:
+          PATH: /opt/anaconda3/bin:/usr/local/bin:/usr/bin:/bin
+        run: |
+          ROUND_ARGS=(
+            --specimens "$RUN_DIR/specimens.json"
+            --run-dir   "$RUN_DIR"
+            --goal      "${{ github.event.inputs.goal }}"
+            --paper-tag "$PAPER_TAG"
+            --max-paint-steps "${{ github.event.inputs.max_paint_steps || 12 }}"
+            --student-epochs  "${{ github.event.inputs.student_epochs || 30 }}"
+            --router-min-confidence "${{ github.event.inputs.router_min_confidence || 0.85 }}"
+            --router-max-entropy    "${{ github.event.inputs.router_max_entropy || 0.35 }}"
+            --graduation-dice-threshold "${{ github.event.inputs.graduation_dice || 0.85 }}"
+          )
+          if [ -n "${{ github.event.inputs.student_artifact }}" ]; then
+            ROUND_ARGS+=(--student "${{ github.event.inputs.student_artifact }}")
+          fi
+          if [ "${{ github.event.inputs.skip_training }}" = "true" ]; then
+            ROUND_ARGS+=(--skip-training)
+          fi
+          set +e
+          python3 -m metadata_to_morphsource.seg_train round "${ROUND_ARGS[@]}" \
+              > "$RUN_DIR/round.log" 2>&1
+          ROUND_EXIT=$?
+          tail -80 "$RUN_DIR/round.log" || true
+          exit $ROUND_EXIT
+
+      - name: Export paper artefacts
+        if: always()
+        env:
+          PATH: /opt/anaconda3/bin:/usr/local/bin:/usr/bin:/bin
+        run: |
+          if [ ! -d "$RUN_DIR/ledger" ]; then
+            echo "No ledger to export; skipping."
+            exit 0
+          fi
+          python3 -m metadata_to_morphsource.seg_train export \
+              --run-dir   "$RUN_DIR" \
+              --paper-tag "$PAPER_TAG" \
+              --output    "$RUN_DIR/paper" \
+              > "$RUN_DIR/export.log" 2>&1 || true
+          tail -40 "$RUN_DIR/export.log" || true
+          python3 -m metadata_to_morphsource.seg_train summary \
+              --run-dir   "$RUN_DIR" \
+              --markdown  "$RUN_DIR/paper/ledger_summary.md" \
+              > "$RUN_DIR/summary.log" 2>&1 || true
+
+      - name: Upload run artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iterative-seg-${{ github.event.inputs.run_name }}-${{ github.run_id }}
+          path: |
+            runs/${{ github.event.inputs.run_name }}/specimens.json
+            runs/${{ github.event.inputs.run_name }}/manifest.json
+            runs/${{ github.event.inputs.run_name }}/ledger/**
+            runs/${{ github.event.inputs.run_name }}/round_*/**
+            runs/${{ github.event.inputs.run_name }}/paper/**
+            runs/${{ github.event.inputs.run_name }}/*.log
+          if-no-files-found: warn
+
+      - name: Post summary as a GitHub issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/github-script@v8
+        with:
+          retries: 3
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const runDir = `runs/${{ github.event.inputs.run_name }}`;
+            const paperDir = path.join(runDir, 'paper');
+            const summaryMd = path.join(paperDir, 'paper_summary.md');
+            const ledgerMd = path.join(paperDir, 'ledger_summary.md');
+
+            const goal = `${{ github.event.inputs.goal }}`;
+            const tag = `${{ github.event.inputs.paper_tag }}`;
+            const runName = `${{ github.event.inputs.run_name }}`;
+
+            let body = `### Iterative segmentation round\n\n` +
+                       `- **Run:** \`${runName}\`\n` +
+                       `- **Paper tag:** \`${tag}\`\n` +
+                       `- **Goal:** ${goal}\n\n`;
+
+            if (fs.existsSync(summaryMd)) {
+              body += fs.readFileSync(summaryMd, 'utf8');
+            } else {
+              body += `_No paper summary produced; check the workflow logs._\n`;
+            }
+            if (fs.existsSync(ledgerMd)) {
+              body += `\n\n---\n\n` + fs.readFileSync(ledgerMd, 'utf8');
+            }
+            body += `\n\n---\n_Workflow: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}_\n`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Iterative seg round: ${runName} — ${goal}`,
+              body: body,
+              labels: ['iterative-segmentation', 'paper-data', tag],
+            });

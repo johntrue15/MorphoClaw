@@ -1,0 +1,66 @@
+name: Update repository labels
+
+# Centralized label management for the comparison/verification IssueOps system.
+# Edit the LABELS_JSON block below; the workflow runs on push to main when this
+# file changes (or on demand via workflow_dispatch) and ensures every label
+# exists with the right color/description.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/labels.yml"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  create-labels:
+    runs-on: ubuntu-latest
+    env:
+      LABELS_JSON: |
+        [
+          {"name": "request-type:comparison",   "color": "0A84FF", "description": "Issue tracks a metadata-to-MorphoSource comparison request"},
+          {"name": "request-type:bug",          "color": "B60205", "description": "Bug report tracked through the comparison automation"},
+          {"name": "request-type:feature",      "color": "0E8A16", "description": "Feature request tracked through the comparison automation"},
+          {"name": "request-creator:user",      "color": "7B6F4C", "description": "Issue was created by a non-bot user"},
+          {"name": "request-creator:bot",       "color": "7B6F4C", "description": "Issue was opened by an automation/bot"},
+
+          {"name": "request:verified",          "color": "027210", "description": "Maintainer approved this request to run the automated pipeline"},
+          {"name": "request:invalid",           "color": "B60205", "description": "Issue does not match the comparison-request template"},
+          {"name": "request:duplicate",         "color": "CFD3D7", "description": "Duplicate of another comparison request"},
+
+          {"name": "mode:show_me_scans",        "color": "5319E7", "description": "Comparison mode: list MorphoSource scans matching a query"},
+          {"name": "mode:tell_me_how_many",     "color": "5319E7", "description": "Comparison mode: count MorphoSource scans matching a query"},
+          {"name": "mode:find_me_fossils",      "color": "5319E7", "description": "Comparison mode: locate fossil specimens in MorphoSource"},
+          {"name": "mode:verify_pixel_spacing", "color": "5319E7", "description": "Comparison mode: audit pixel spacing for a dataset"},
+          {"name": "mode:compare_metadata",     "color": "5319E7", "description": "Comparison mode: full metadata diff vs MorphoSource"},
+          {"name": "mode:other",                "color": "5319E7", "description": "Comparison mode: described in additional context"},
+
+          {"name": "input:morphosource-api",    "color": "1550D4", "description": "Input source: MorphoSource API"},
+          {"name": "input:local-csv",           "color": "1550D4", "description": "Input source: local/attached CSV"},
+          {"name": "input:url",                 "color": "1550D4", "description": "Input source: publicly downloadable URL"},
+          {"name": "input:both",                "color": "1550D4", "description": "Input source: API + local CSV"},
+
+          {"name": "status:queued",             "color": "CFD3D7", "description": "Request is queued and not yet picked up by automation"},
+          {"name": "status:validating",         "color": "CFD3D7", "description": "Issue template/body is being validated"},
+          {"name": "status:awaiting-approval",  "color": "FBCA04", "description": "Waiting for a maintainer to /approve"},
+          {"name": "status:running",            "color": "FBCA04", "description": "Comparison pipeline is currently running"},
+          {"name": "status:verifying",          "color": "FBCA04", "description": "Pipeline output is being verified"},
+          {"name": "status:completed",          "color": "027210", "description": "Comparison and verification completed successfully"},
+          {"name": "status:failed",             "color": "B60205", "description": "Comparison or verification failed; see workflow logs"}
+        ]
+    steps:
+      - name: Create or update labels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          echo "$LABELS_JSON" | jq -r '.[] | [.name, .color, .description] | @tsv' | \
+          while IFS=$'\t' read -r name color description; do
+            echo "Ensuring label: $name"
+            gh label create "$name" --color "$color" --description "$description" --force
+          done

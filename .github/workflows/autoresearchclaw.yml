@@ -151,7 +151,7 @@ jobs:
     needs: create-research-issue
     permissions:
       issues: write
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -243,6 +243,40 @@ jobs:
             ~/.autoresearchclaw/graphs/*.json
             ~/.autoresearchclaw/graphs/*.html
           if-no-files-found: ignore
+
+      - name: Publish knowledge graph snapshot to docs/
+        if: always()
+        env:
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RESEARCH_TOPIC: ${{ inputs.research_topic }}
+        run: |
+          set -e
+          # Skip silently if the agent didn't produce any graph JSON
+          # (e.g. it crashed before knowledge_graph.export_json fired).
+          if ! ls ~/.autoresearchclaw/graphs/*.json >/dev/null 2>&1; then
+            echo "No knowledge graph JSON in ~/.autoresearchclaw/graphs/; skipping publish."
+            exit 0
+          fi
+          python3 docs/scripts/merge_graphs.py \
+            --in  "$HOME/.autoresearchclaw/graphs" \
+            --out docs/data \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-url "https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --topic "$RESEARCH_TOPIC" \
+            --verbose
+
+      - name: Commit refreshed knowledge graph snapshot
+        if: always()
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore(docs): refresh knowledge graph snapshot (run ${{ github.run_id }})"
+          file_pattern: docs/data/**
+          commit_user_name: autoresearchclaw-bot
+          commit_user_email: autoresearchclaw-bot@users.noreply.github.com
+          commit_author: autoresearchclaw-bot <autoresearchclaw-bot@users.noreply.github.com>
+          skip_dirty_check: false
+          skip_fetch: false
 
       - name: Upload nnInteractive segmentations
         if: ${{ always() && inputs.enable_nninteractive }}

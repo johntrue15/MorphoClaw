@@ -1,0 +1,55 @@
+name: "Check verification approval"
+description: >
+  Check whether an issue carries the `request:verified` label, indicating that
+  a maintainer has approved the comparison request to run.
+
+inputs:
+  token:
+    description: "GITHUB_TOKEN or repo-scoped PAT"
+    required: true
+  issue_number:
+    description: "Issue number to inspect"
+    required: true
+  approval_label:
+    description: "Label name that signals approval"
+    required: false
+    default: "request:verified"
+
+outputs:
+  is_approved:
+    description: "'true' if the approval label is present, otherwise 'false'"
+    value: ${{ steps.check_approval.outputs.is_approved }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Check approval label
+      id: check_approval
+      shell: bash
+      env:
+        ISSUE_NUMBER: ${{ inputs.issue_number }}
+        APPROVAL_LABEL: ${{ inputs.approval_label }}
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        echo "Fetching labels for issue #$ISSUE_NUMBER"
+
+        if ! LABELS_JSON=$(gh issue view "$ISSUE_NUMBER" --json labels 2>/dev/null) || \
+           [[ -z "$LABELS_JSON" ]]; then
+          echo "::warning ::Failed to fetch labels or issue does not exist."
+          echo "is_approved=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        echo "$LABELS_JSON" | jq .
+
+        if echo "$LABELS_JSON" | \
+            jq -e --arg lbl "$APPROVAL_LABEL" \
+            '[.labels[].name] | index($lbl)' >/dev/null; then
+          is_approved=true
+        else
+          is_approved=false
+        fi
+
+        echo "is_approved [$is_approved]"
+        echo "is_approved=$is_approved" >> "$GITHUB_OUTPUT"

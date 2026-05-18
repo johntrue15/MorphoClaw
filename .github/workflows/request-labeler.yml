@@ -1,0 +1,97 @@
+name: "Comparison Request Labeler"
+
+# Auto-applies labels derived from the structured fields of a comparison
+# request:
+#   * mode:<comparison_mode>
+#   * input:<input_source>
+#   * status:awaiting-approval (replacing status:queued)
+#
+# Triggered by `on-request-opened.yml` for new issues, or manually via
+# workflow_dispatch when a maintainer wants to re-label an existing issue.
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number"
+        required: true
+  workflow_call:
+    inputs:
+      issue_number:
+        description: "Issue number"
+        required: true
+        type: string
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  labeler:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect inputs
+        id: collect_inputs
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ISSUE_NUMBER_INPUT: ${{ inputs.issue_number || github.event.inputs.issue_number }}
+        run: |
+          if [[ -z "$ISSUE_NUMBER_INPUT" || "$ISSUE_NUMBER_INPUT" == "null" ]]; then
+            echo "::error ::issue_number not provided"
+            exit 1
+          fi
+          echo "issue_number=$ISSUE_NUMBER_INPUT" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+
+      - name: Extract issue fields
+        id: extract
+        uses: ./.github/actions/extract-issue-fields
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          issue_number: ${{ steps.collect_inputs.outputs.issue_number }}
+
+      - name: Add mode label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ steps.collect_inputs.outputs.issue_number }}
+          MODE: ${{ steps.extract.outputs.comparison_mode }}
+        run: |
+          # Map known modes onto canonical label slugs.
+          case "$MODE" in
+            show_me_scans)         label="mode:show_me_scans" ;;
+            tell_me_how_many_scans) label="mode:tell_me_how_many" ;;
+            find_me_fossils)       label="mode:find_me_fossils" ;;
+            verify_pixel_spacing)  label="mode:verify_pixel_spacing" ;;
+            compare_metadata)      label="mode:compare_metadata" ;;
+            *)                     label="mode:other" ;;
+          esac
+          echo "Adding $label"
+          gh issue edit "$NUMBER" --add-label "$label"
+
+      - name: Add input-source label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ steps.collect_inputs.outputs.issue_number }}
+          INPUT_SRC: ${{ steps.extract.outputs.input_source }}
+        run: |
+          case "$INPUT_SRC" in
+            morphosource-api)                label="input:morphosource-api" ;;
+            local-csv*|local-csv\ *)         label="input:local-csv" ;;
+            url*)                            label="input:url" ;;
+            both*)                           label="input:both" ;;
+            *)                               label="input:morphosource-api" ;;
+          esac
+          echo "Adding $label"
+          gh issue edit "$NUMBER" --add-label "$label"
+
+      - name: Move status from queued to awaiting-approval
+        uses: ./.github/actions/update-status-label
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue_number: ${{ steps.collect_inputs.outputs.issue_number }}
+          status: awaiting-approval

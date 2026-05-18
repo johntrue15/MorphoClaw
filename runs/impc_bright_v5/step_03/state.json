@@ -1,0 +1,23 @@
+{
+  "status": "ok",
+  "picked_ijk": [
+    164,
+    152,
+    278
+  ],
+  "intensity": 185.0,
+  "voxels_before": 151835,
+  "voxels_after": 155109,
+  "delta": 3274,
+  "new_voxels_at_picked": 1,
+  "click_positive": true,
+  "skipped_inside": 15410,
+  "candidates_left": 34013,
+  "click_seconds": 1.083,
+  "made_new_segment": true,
+  "segment_id": "Segment_4",
+  "segment_voxels": 3274,
+  "n_segments_before": 3,
+  "n_segments_after": 4,
+  "_dt_s": 2.242
+}

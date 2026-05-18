@@ -1,0 +1,55 @@
+{
+  "step": 0,
+  "metadata": {
+    "red_offset_mm": 210.0,
+    "red_orientation": "Axial",
+    "yellow_offset_mm": -129.0,
+    "yellow_orientation": "Sagittal",
+    "green_offset_mm": 129.0,
+    "green_orientation": "Coronal",
+    "volume_name": "IMPC_sample_data",
+    "volume_id": "vtkMRMLScalarVolumeNode1",
+    "dimensions_ijk": [
+      259,
+      258,
+      421
+    ],
+    "spacing_mm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "ras_bounds": [
+      -0.5,
+      258.5,
+      -0.5,
+      257.5,
+      -0.5,
+      420.5
+    ],
+    "scalar_range": [
+      0.0,
+      255.0
+    ],
+    "scalar_type": "unsigned char",
+    "segmentation_voxel_count": 0,
+    "segmentation_nodes": [
+      {
+        "name": "Segmentation",
+        "n_segments": 0,
+        "voxel_count": 0
+      }
+    ],
+    "plugin_server": "http://0.0.0.0:1527",
+    "plugin_is_positive": true,
+    "_dt_s": 0.246
+  },
+  "llm_action": {
+    "action": "point",
+    "i": 129,
+    "j": 129,
+    "k": 210,
+    "positive": true,
+    "rationale": "Select a point inside the bright white skull in the axial view."
+  }
+}

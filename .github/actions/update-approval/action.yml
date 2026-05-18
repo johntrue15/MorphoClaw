@@ -1,0 +1,90 @@
+name: "Update verification approval"
+description: >
+  Apply or remove the `request:verified` label on a comparison-request issue
+  in response to an `/approve` or `/unapprove` slash command. Posts a
+  confirmation comment so the issue history records who approved.
+
+inputs:
+  token:
+    description: "GITHUB_TOKEN or repo-scoped PAT"
+    required: true
+  issue_number:
+    description: "Issue number"
+    required: true
+  command_name:
+    description: "One of: approve, unapprove"
+    required: true
+  approval_label:
+    description: "Label name to toggle"
+    required: false
+    default: "request:verified"
+  actor:
+    description: "Login of the user who issued the command (used in the confirmation comment)"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate command
+      shell: bash
+      env:
+        COMMAND_NAME: ${{ inputs.command_name }}
+      run: |
+        if [[ ! "$COMMAND_NAME" =~ ^(approve|unapprove)$ ]]; then
+          echo "::error ::Unknown command name '$COMMAND_NAME'. Valid commands are 'approve' or 'unapprove'."
+          exit 1
+        fi
+
+    - name: Apply approval label
+      if: ${{ inputs.command_name == 'approve' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+        ISSUE_NUMBER: ${{ inputs.issue_number }}
+        APPROVAL_LABEL: ${{ inputs.approval_label }}
+      run: |
+        gh issue edit "$ISSUE_NUMBER" --add-label "$APPROVAL_LABEL"
+
+    - name: Remove approval label
+      if: ${{ inputs.command_name == 'unapprove' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+        ISSUE_NUMBER: ${{ inputs.issue_number }}
+        APPROVAL_LABEL: ${{ inputs.approval_label }}
+      run: |
+        gh issue edit "$ISSUE_NUMBER" --remove-label "$APPROVAL_LABEL"
+
+    - name: Comment on success (approve)
+      if: ${{ success() && inputs.command_name == 'approve' }}
+      uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4.0.0
+      with:
+        issue-number: ${{ inputs.issue_number }}
+        body: |
+          ✅ Comparison request **approved**${{ inputs.actor != '' && format(' by **{0}**', inputs.actor) || '' }}.
+
+          The issue author can now invoke `/run-comparison` or `/verify` to trigger the
+          automated pipeline. Use `/unapprove` to revoke the approval.
+
+    - name: Comment on success (unapprove)
+      if: ${{ success() && inputs.command_name == 'unapprove' }}
+      uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4.0.0
+      with:
+        issue-number: ${{ inputs.issue_number }}
+        body: |
+          ⚪ Approval **revoked**${{ inputs.actor != '' && format(' by **{0}**', inputs.actor) || '' }}.
+
+          Automated comparison commands are disabled until `/approve` is issued again.
+
+    - name: Comment on failure
+      if: ${{ failure() }}
+      uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4.0.0
+      with:
+        issue-number: ${{ inputs.issue_number }}
+        body: |
+          ❌ `/${{ inputs.command_name }}` command failed to be applied to this issue.
+
+          See details at https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}

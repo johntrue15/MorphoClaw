@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{# Material theme override: adds a single-column hero on the home page and
+   keeps the default layout on every other page. The hero markup itself
+   lives in docs/index.md (as raw HTML inside the `hero` div) so authors
+   can edit it without touching theme templates. #}
+
+{% block announce %}
+  <a href="{{ 'knowledge-graph/' | url }}">
+    Live knowledge graph is updated automatically after every research run &mdash; explore it now &rarr;
+  </a>
+{% endblock %}

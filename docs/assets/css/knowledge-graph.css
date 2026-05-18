@@ -1,0 +1,316 @@
+/* Knowledge Graph page — layout and theming hooks.
+ *
+ * Reads MkDocs Material CSS variables so the panel automatically follows
+ * the user's chosen palette (light / dark / auto).
+ */
+
+.kg-app {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 1rem;
+  margin: 1.5rem 0 2rem 0;
+  min-height: 640px;
+}
+
+@media (max-width: 900px) {
+  .kg-app {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+}
+
+/* ----- Sidebar ----- */
+
+.kg-sidebar {
+  background: var(--md-default-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  position: sticky;
+  top: 5rem;
+  align-self: flex-start;
+  max-height: calc(100vh - 6rem);
+  overflow-y: auto;
+}
+
+.kg-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.kg-section-title {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--md-default-fg-color--light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.kg-pill {
+  font-size: 0.75rem;
+  background: var(--md-primary-fg-color);
+  color: var(--md-primary-bg-color);
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+}
+
+.kg-meta {
+  font-size: 0.78rem;
+  color: var(--md-default-fg-color--light);
+  line-height: 1.4;
+}
+
+.kg-input,
+.kg-select {
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  background: var(--md-code-bg-color);
+  color: var(--md-default-fg-color);
+}
+
+.kg-input:focus,
+.kg-select:focus {
+  outline: none;
+  border-color: var(--md-primary-fg-color);
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+}
+
+.kg-range {
+  width: 100%;
+}
+
+.kg-checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.kg-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: var(--md-default-fg-color);
+  user-select: none;
+}
+
+.kg-checkbox input[type="checkbox"] {
+  accent-color: var(--md-primary-fg-color);
+  width: 16px;
+  height: 16px;
+}
+
+.kg-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+.kg-count {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--md-default-fg-color--light);
+}
+
+.kg-btn {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 8px;
+  background: var(--md-primary-fg-color);
+  color: var(--md-primary-bg-color);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.kg-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.kg-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.kg-btn-secondary {
+  background: transparent;
+  color: var(--md-default-fg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  margin-top: 0.4rem;
+}
+
+/* ----- Stage ----- */
+
+.kg-stage {
+  position: relative;
+  background: var(--md-default-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 12px;
+  overflow: hidden;
+  min-height: 640px;
+}
+
+.kg-graph {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.kg-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+  color: var(--md-default-fg-color--light);
+}
+
+.kg-empty h2 {
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+  color: var(--md-default-fg-color);
+}
+
+.kg-empty p {
+  max-width: 40ch;
+  line-height: 1.6;
+}
+
+.kg-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  background: var(--md-default-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.78rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  z-index: 5;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+}
+
+.kg-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.kg-details {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: min(320px, 60%);
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  background: var(--md-default-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 10px;
+  padding: 0.85rem 1rem 1rem 1rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+  z-index: 10;
+}
+
+.kg-details h3 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1rem;
+  padding-right: 1.5rem;
+  word-break: break-word;
+}
+
+.kg-details-type {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--md-default-fg-color--light);
+  margin-bottom: 0.6rem;
+}
+
+.kg-details-props {
+  margin: 0;
+  font-size: 0.82rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.3rem;
+}
+
+.kg-details-props .kg-prop {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 0.5rem;
+  word-break: break-word;
+}
+
+.kg-details-props .kg-prop dt {
+  color: var(--md-default-fg-color--light);
+  font-weight: 500;
+}
+
+.kg-details-props .kg-prop dd {
+  margin: 0;
+  color: var(--md-default-fg-color);
+}
+
+.kg-details-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.kg-details-actions a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 6px;
+  background: var(--md-primary-fg-color);
+  color: var(--md-primary-bg-color);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.82rem;
+}
+
+.kg-details-actions a.kg-secondary {
+  background: transparent;
+  color: var(--md-default-fg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.kg-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  background: transparent;
+  border: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--md-default-fg-color--light);
+}
+
+.kg-close:hover {
+  color: var(--md-default-fg-color);
+}

@@ -1,0 +1,258 @@
+{
+  "metadata": {
+    "red_offset_mm": 129.0,
+    "red_orientation": "Coronal",
+    "yellow_offset_mm": -129.0,
+    "yellow_orientation": "Sagittal",
+    "green_offset_mm": 129.0,
+    "green_orientation": "Coronal",
+    "volume_name": "IMPC_sample_data",
+    "volume_id": "vtkMRMLScalarVolumeNode1",
+    "dimensions_ijk": [
+      259,
+      258,
+      421
+    ],
+    "spacing_mm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "ras_bounds": [
+      -0.5,
+      258.5,
+      -0.5,
+      257.5,
+      -0.5,
+      420.5
+    ],
+    "scalar_range": [
+      0.0,
+      255.0
+    ],
+    "scalar_type": "unsigned char",
+    "segmentation_voxel_count": 19897085,
+    "segmentation_nodes": [
+      {
+        "name": "Segmentation",
+        "n_segments": 1,
+        "voxel_count": 19897085
+      }
+    ],
+    "plugin_server": "http://0.0.0.0:1527",
+    "plugin_is_positive": false,
+    "_dt_s": 0.36
+  },
+  "history": [
+    {
+      "step": 0,
+      "action": {
+        "action": "point",
+        "i": 129,
+        "j": 129,
+        "k": 210,
+        "positive": true,
+        "rationale": "Select a point inside the bright white skull in the axial view."
+      },
+      "result_summary": {
+        "applied": true,
+        "seconds": 1.332,
+        "clamped_ijk": [
+          129,
+          129,
+          210
+        ],
+        "recenter_ras": null
+      }
+    },
+    {
+      "step": 1,
+      "action": {
+        "action": "point",
+        "i": 129,
+        "j": 129,
+        "k": 150,
+        "positive": true,
+        "rationale": "Select a point inside the bright white skull in the sagittal view."
+      },
+      "result_summary": {
+        "applied": true,
+        "seconds": 0.526,
+        "clamped_ijk": [
+          129,
+          129,
+          150
+        ],
+        "recenter_ras": null
+      }
+    },
+    {
+      "step": 2,
+      "action": {
+        "action": "point",
+        "i": 129,
+        "j": 129,
+        "k": 250,
+        "positive": true,
+        "rationale": "Select a point inside the bright white skull in the axial view to ensure full coverage."
+      },
+      "result_summary": {
+        "applied": true,
+        "seconds": 0.52,
+        "clamped_ijk": [
+          129,
+          129,
+          250
+        ],
+        "recenter_ras": null
+      }
+    },
+    {
+      "step": 3,
+      "action": {
+        "action": "point",
+        "i": 129,
+        "j": 200,
+        "k": 129,
+        "positive": true,
+        "rationale": "Select a point inside the bright white skull in the coronal view for better coverage."
+      },
+      "result_summary": {
+        "applied": true,
+        "seconds": 3.473,
+        "clamped_ijk": [
+          129,
+          200,
+          129
+        ],
+        "recenter_ras": null
+      }
+    },
+    {
+      "step": 4,
+      "action": {
+        "action": "point",
+        "i": 129,
+        "j": 50,
+        "k": 200,
+        "positive": true,
+        "rationale": "Select a point inside the bright white skull in the coronal view to ensure lateral coverage."
+      },
+      "result_summary": {
+        "applied": true,
+        "seconds": 4.527,
+        "clamped_ijk": [
+          129,
+          50,
+          200
+        ],
+        "recenter_ras": null
+      }
+    },
+    {
+      "step": 5,
+      "action": {
+        "action": "point",
+        "i": 129,
+        "j": 129,
+        "k": 300,
+        "positive": true,
+        "rationale": "Select a point inside the bright white skull in the axial view to ensure coverage of the posterior region."
+      },
+      "result_summary": {
+        "applied": true,
+        "seconds": 6.132,
+        "clamped_ijk": [
+          129,
+          129,
+          300
+        ],
+        "recenter_ras": null
+      }
+    },
+    {
+      "step": 6,
+      "action": {
+        "action": "point",
+        "i": 129,
+        "j": 129,
+        "k": 50,
+        "positive": true,
+        "rationale": "Select a point inside the bright white skull in the axial view to ensure coverage of the anterior region."
+      },
+      "result_summary": {
+        "applied": true,
+        "seconds": 1.06,
+        "clamped_ijk": [
+          129,
+          129,
+          50
+        ],
+        "recenter_ras": null
+      }
+    },
+    {
+      "step": 7,
+      "action": {
+        "action": "point",
+        "i": 200,
+        "j": 129,
+        "k": 129,
+        "positive": true,
+        "rationale": "Select a point inside the bright white skull in the sagittal view to ensure lateral coverage."
+      },
+      "result_summary": {
+        "applied": true,
+        "seconds": 4.708,
+        "clamped_ijk": [
+          200,
+          129,
+          129
+        ],
+        "recenter_ras": null
+      }
+    },
+    {
+      "step": 8,
+      "action": {
+        "action": "point",
+        "i": 50,
+        "j": 129,
+        "k": 129,
+        "positive": true,
+        "rationale": "Select a point inside the bright white skull in the sagittal view to ensure anterior coverage."
+      },
+      "result_summary": {
+        "applied": true,
+        "seconds": 5.723,
+        "clamped_ijk": [
+          50,
+          129,
+          129
+        ],
+        "recenter_ras": null
+      }
+    },
+    {
+      "step": 9,
+      "action": {
+        "action": "point",
+        "i": 129,
+        "j": 129,
+        "k": 129,
+        "positive": false,
+        "rationale": "Remove excess segmentation in the central region to refine the skull boundary."
+      },
+      "result_summary": {
+        "applied": true,
+        "seconds": 4.786,
+        "clamped_ijk": [
+          129,
+          129,
+          129
+        ],
+        "recenter_ras": null
+      }
+    }
+  ]
+}

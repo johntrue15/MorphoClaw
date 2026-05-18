@@ -1,0 +1,60 @@
+name: "Notify on admin mention"
+
+# Sends an email and posts an acknowledgement comment whenever a non-bot
+# commenter mentions the maintainer team handle in an issue or PR comment.
+# The handle to watch for is configured via the `ADMIN_HANDLE` repository
+# variable (default: `@johntrue15`).
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  notify-on-mention:
+    if: ${{ github.event.comment.user.type != 'Bot' && contains(github.event.comment.body, vars.ADMIN_HANDLE != '' && vars.ADMIN_HANDLE || '@johntrue15') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Acknowledge mention
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4.0.0
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            🔔 Maintainers (${{ vars.ADMIN_HANDLE != '' && vars.ADMIN_HANDLE || '@johntrue15' }}) have been pinged by **@${{ github.event.comment.user.login }}**.
+
+      - name: Probe SMTP credentials
+        id: probe_smtp
+        env:
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+        shell: bash
+        run: |
+          if [[ -n "$MAIL_USERNAME" && -n "$MAIL_PASSWORD" ]]; then
+            echo "has_creds=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_creds=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send email to maintainers
+        if: ${{ vars.ADMIN_EMAILS != '' && steps.probe_smtp.outputs.has_creds == 'true' }}
+        uses: dawidd6/action-send-mail@611879133a9569642c41be66f4a323286e9b8a3b # v3.12.0
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          from: ${{ github.event.repository.name }} <${{ secrets.MAIL_USERNAME }}>
+          to: ${{ vars.ADMIN_EMAILS }}
+          subject:
+            "[${{ github.event.repository.name }}] ${{ vars.ADMIN_HANDLE != '' && vars.ADMIN_HANDLE || '@johntrue15' }} mentioned by @${{ github.event.comment.user.login }} in #${{ github.event.issue.number }}"
+          body: |
+            @${{ github.event.comment.user.login }} mentioned the maintainer handle in issue #${{ github.event.issue.number }}.
+
+            Comment:
+            ${{ github.event.comment.body }}
+
+            See: ${{ github.event.comment.html_url }}

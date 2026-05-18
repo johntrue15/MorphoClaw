@@ -1,0 +1,55 @@
+{
+  "step": 4,
+  "metadata": {
+    "red_offset_mm": 5.929,
+    "red_orientation": "Coronal",
+    "yellow_offset_mm": -30.355,
+    "yellow_orientation": "Sagittal",
+    "green_offset_mm": 5.929,
+    "green_orientation": "Coronal",
+    "volume_name": "MRHead",
+    "volume_id": "vtkMRMLScalarVolumeNode2",
+    "dimensions_ijk": [
+      256,
+      256,
+      130
+    ],
+    "spacing_mm": [
+      1.0,
+      1.0,
+      1.3
+    ],
+    "ras_bounds": [
+      -87.29,
+      81.7,
+      -121.57,
+      134.43,
+      -138.71,
+      117.29
+    ],
+    "scalar_range": [
+      0.0,
+      279.0
+    ],
+    "scalar_type": "short",
+    "segmentation_voxel_count": 549427,
+    "segmentation_nodes": [
+      {
+        "name": "Segmentation",
+        "n_segments": 1,
+        "voxel_count": 549427
+      }
+    ],
+    "plugin_server": "http://0.0.0.0:1527",
+    "plugin_is_positive": false,
+    "_dt_s": 0.336
+  },
+  "llm_action": {
+    "action": "point",
+    "i": 128,
+    "j": 128,
+    "k": 20,
+    "positive": false,
+    "rationale": "Remove non-brain tissue near the lower boundary in the axial view."
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "nodes": [],
+  "edges": [],
+  "stats": {
+    "media": 0,
+    "specimens": 0,
+    "papers": 0,
+    "institutions": 0,
+    "taxa": 0,
+    "media_lists": 0,
+    "total_nodes": 0,
+    "total_edges": 0
+  },
+  "generated_at": null,
+  "source": "placeholder",
+  "note": "This file is auto-overwritten by docs/scripts/merge_graphs.py after each AutoResearchClaw run. The placeholder lets the docs site render its empty state on first deploy."
+}

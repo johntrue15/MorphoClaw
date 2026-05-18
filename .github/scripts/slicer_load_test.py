@@ -5,11 +5,12 @@ Runs INSIDE 3D Slicer via ``Slicer --no-splash --no-main-window
 
 Loads the model whose path is passed via the ``SLICER_LOAD_PATH``
 environment variable, performs a few SlicerMorph-sanity checks
-(slicer.util.loadModel, mesh point count, bounds non-degenerate),
+(``slicer.util.loadModel``, mesh point count, bounds non-degenerate),
 optionally verifies that the SlicerMorph extension is importable,
-and writes the result as JSON to ``SLICER_LOAD_OUT`` before exiting.
+and writes the result as JSON to ``SLICER_LOAD_OUT`` before asking
+Slicer to exit.
 
-Exit codes:
+Exit codes (passed to ``slicer.app.exit``):
     0 - success, JSON written
     2 - SLICER_LOAD_PATH missing or file not found
     3 - load failed
@@ -18,10 +19,17 @@ Exit codes:
 
 The companion pytest test (``Tests/test_slicer_cached_model.py``)
 spawns this script and parses the JSON to assert on the result.
+
+macOS gotcha: do NOT call ``sys.exit`` after ``slicer.app.exit`` --
+raising ``SystemExit`` inside Qt's event loop on Darwin tends to
+leave Slicer hung indefinitely with no main window to interact with.
+``slicer.app.exit(N)`` alone is what every other production script
+in this repo uses.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -40,118 +48,142 @@ REQUIRE_SLICERMORPH = os.environ.get("SLICER_REQUIRE_SLICERMORPH", "0") == "1"
 MIN_POINTS = int(os.environ.get("SLICER_MIN_POINTS", "1"))
 
 
+def _build_payload() -> tuple[dict, int]:
+    """Run the load probe and return ``(payload, exit_code)``."""
+    if not LOAD_PATH or not os.path.exists(LOAD_PATH):
+        return (
+            {
+                "ok": False,
+                "error": f"SLICER_LOAD_PATH not set or missing: {LOAD_PATH!r}",
+                "load_path": LOAD_PATH,
+            },
+            2,
+        )
+
+    slicermorph_available = False
+    slicermorph_error = ""
+    try:
+        # SlicerMorph is a meta-extension; one of its sub-modules being
+        # importable is a good proxy for the bundle being installed.
+        import GPA  # type: ignore  # noqa: F401  -- side-effect probe
+
+        slicermorph_available = True
+    except Exception as exc:
+        slicermorph_error = f"{type(exc).__name__}: {exc}"
+
+    if REQUIRE_SLICERMORPH and not slicermorph_available:
+        return (
+            {
+                "ok": False,
+                "error": "SlicerMorph extension not available",
+                "slicermorph_error": slicermorph_error,
+                "load_path": LOAD_PATH,
+            },
+            5,
+        )
+
+    try:
+        success, model_node = slicer.util.loadModel(LOAD_PATH, returnNode=True)
+    except Exception as exc:
+        return (
+            {
+                "ok": False,
+                "error": "loadModel raised",
+                "exception": f"{type(exc).__name__}: {exc}",
+                "traceback": traceback.format_exc(limit=4),
+                "load_path": LOAD_PATH,
+            },
+            3,
+        )
+
+    if not success or model_node is None:
+        return (
+            {
+                "ok": False,
+                "error": "loadModel returned no node",
+                "load_path": LOAD_PATH,
+            },
+            3,
+        )
+
+    mesh = model_node.GetMesh()
+    if mesh is None:
+        return (
+            {
+                "ok": False,
+                "error": "Loaded model has no mesh",
+                "load_path": LOAD_PATH,
+            },
+            4,
+        )
+
+    n_points = mesh.GetNumberOfPoints()
+    n_cells = mesh.GetNumberOfCells()
+    bounds = [0.0] * 6
+    model_node.GetBounds(bounds)
+    extent = [bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4]]
+
+    if n_points < MIN_POINTS or all(e == 0 for e in extent):
+        return (
+            {
+                "ok": False,
+                "error": "Mesh sanity check failed",
+                "n_points": n_points,
+                "n_cells": n_cells,
+                "bounds": bounds,
+                "extent": extent,
+                "load_path": LOAD_PATH,
+            },
+            4,
+        )
+
+    return (
+        {
+            "ok": True,
+            "load_path": LOAD_PATH,
+            "n_points": n_points,
+            "n_cells": n_cells,
+            "bounds": bounds,
+            "extent": extent,
+            "slicermorph_available": slicermorph_available,
+            "slicermorph_error": slicermorph_error,
+            "node_name": model_node.GetName(),
+        },
+        0,
+    )
+
+
 def _emit(payload: dict, exit_code: int) -> None:
+    """Persist the result and force the Slicer process to terminate.
+
+    We use ``os._exit`` (not ``sys.exit``) because on macOS without a
+    main window Slicer's Qt event loop tends to ignore both
+    ``slicer.app.exit`` and ``SystemExit``, leaving the process alive
+    for several minutes while it waits for non-existent UI events.
+    ``os._exit`` bypasses Python's atexit + Qt's destructors and
+    returns the desired exit code immediately, which is exactly what
+    a CI smoke test wants.  The JSON has already been written to disk
+    and stdout before we get here, so nothing of value is lost.
+    """
     payload.setdefault("exit_code", exit_code)
     serialised = json.dumps(payload, indent=2)
+    print("SLICER_LOAD_TEST_RESULT_BEGIN")
     print(serialised)
+    print("SLICER_LOAD_TEST_RESULT_END")
     if OUT_PATH:
         try:
             with open(OUT_PATH, "w", encoding="utf-8") as fh:
                 fh.write(serialised)
         except OSError as exc:
             sys.stderr.write(f"slicer_load_test: could not write {OUT_PATH}: {exc}\n")
-    slicer.app.exit(exit_code)
-    sys.exit(exit_code)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    # Ask Slicer politely first (helps on Linux/Windows headless),
+    # then hard-exit for macOS where the event loop is sticky.
+    with contextlib.suppress(Exception):
+        slicer.app.exit(exit_code)
+    os._exit(exit_code)
 
 
-if not LOAD_PATH or not os.path.exists(LOAD_PATH):
-    _emit(
-        {
-            "ok": False,
-            "error": f"SLICER_LOAD_PATH not set or missing: {LOAD_PATH!r}",
-            "load_path": LOAD_PATH,
-        },
-        2,
-    )
-
-slicermorph_available = False
-slicermorph_error = ""
-try:
-    # SlicerMorph is a meta-extension; one of its sub-modules being importable
-    # is a good proxy for the bundle being installed.
-    import GPA  # type: ignore  # noqa: F401  -- import for side-effect / availability check
-
-    slicermorph_available = True
-except Exception as exc:
-    slicermorph_error = f"{type(exc).__name__}: {exc}"
-
-if REQUIRE_SLICERMORPH and not slicermorph_available:
-    _emit(
-        {
-            "ok": False,
-            "error": "SlicerMorph extension not available",
-            "slicermorph_error": slicermorph_error,
-            "load_path": LOAD_PATH,
-        },
-        5,
-    )
-
-try:
-    success, model_node = slicer.util.loadModel(LOAD_PATH, returnNode=True)
-except Exception as exc:
-    _emit(
-        {
-            "ok": False,
-            "error": "loadModel raised",
-            "exception": f"{type(exc).__name__}: {exc}",
-            "traceback": traceback.format_exc(limit=4),
-            "load_path": LOAD_PATH,
-        },
-        3,
-    )
-
-if not success or model_node is None:
-    _emit(
-        {
-            "ok": False,
-            "error": "loadModel returned no node",
-            "load_path": LOAD_PATH,
-        },
-        3,
-    )
-
-mesh = model_node.GetMesh()
-if mesh is None:
-    _emit(
-        {
-            "ok": False,
-            "error": "Loaded model has no mesh",
-            "load_path": LOAD_PATH,
-        },
-        4,
-    )
-
-n_points = mesh.GetNumberOfPoints()
-n_cells = mesh.GetNumberOfCells()
-bounds = [0.0] * 6
-model_node.GetBounds(bounds)
-extent = [bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4]]
-
-if n_points < MIN_POINTS or all(e == 0 for e in extent):
-    _emit(
-        {
-            "ok": False,
-            "error": "Mesh sanity check failed",
-            "n_points": n_points,
-            "n_cells": n_cells,
-            "bounds": bounds,
-            "extent": extent,
-            "load_path": LOAD_PATH,
-        },
-        4,
-    )
-
-_emit(
-    {
-        "ok": True,
-        "load_path": LOAD_PATH,
-        "n_points": n_points,
-        "n_cells": n_cells,
-        "bounds": bounds,
-        "extent": extent,
-        "slicermorph_available": slicermorph_available,
-        "slicermorph_error": slicermorph_error,
-        "node_name": model_node.GetName(),
-    },
-    0,
-)
+payload, exit_code = _build_payload()
+_emit(payload, exit_code)

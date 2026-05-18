@@ -1,0 +1,124 @@
+name: "Create or update verification progress comment"
+description: >
+  Render a verification checklist comment with emoji status markers
+  (⏳ pending, ✅ done, ❌ failed, ⚪ skipped) and post or update it on
+  the issue. Adapted from MorphoCloud/MorphoCloudInstances `comment-progress`.
+
+inputs:
+  issue-number:
+    description: "Issue number that the progress comment lives on"
+    required: true
+  comment-id:
+    description: "Existing comment ID to update; if empty, a new comment is created"
+    required: false
+    default: ""
+
+  validate_template:
+    description: "Status emoji for the 'Validate issue template' step ('', ⏳, ✅, ❌, ⚪)"
+    required: false
+    default: ""
+  parse_fields:
+    description: "Status emoji for the 'Parse fields' step"
+    required: false
+    default: ""
+  apply_labels:
+    description: "Status emoji for the 'Apply labels' step"
+    required: false
+    default: ""
+  notify_admins:
+    description: "Status emoji for the 'Notify admins' step"
+    required: false
+    default: ""
+  run_comparison:
+    description: "Status emoji for the 'Run comparison' step"
+    required: false
+    default: ""
+  verify_results:
+    description: "Status emoji for the 'Verify results' step"
+    required: false
+    default: ""
+  publish_report:
+    description: "Status emoji for the 'Publish report' step"
+    required: false
+    default: ""
+
+outputs:
+  comment-id:
+    description: "ID of the comment that was created or updated"
+    value: ${{ steps.couc.outputs.comment-id }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Compute overall status
+      id: status
+      shell: bash
+      env:
+        VALIDATE_TEMPLATE: ${{ inputs.validate_template }}
+        PARSE_FIELDS: ${{ inputs.parse_fields }}
+        APPLY_LABELS: ${{ inputs.apply_labels }}
+        NOTIFY_ADMINS: ${{ inputs.notify_admins }}
+        RUN_COMPARISON: ${{ inputs.run_comparison }}
+        VERIFY_RESULTS: ${{ inputs.verify_results }}
+        PUBLISH_REPORT: ${{ inputs.publish_report }}
+      run: |
+        # If any step is ❌, overall is ❌; else if all required are ✅, overall is ✅; else ⏳.
+        any_failed=false
+        for v in "$VALIDATE_TEMPLATE" "$PARSE_FIELDS" "$APPLY_LABELS" "$NOTIFY_ADMINS" \
+                 "$RUN_COMPARISON" "$VERIFY_RESULTS" "$PUBLISH_REPORT"; do
+          if [[ "$v" == "❌" ]]; then any_failed=true; fi
+        done
+
+        if $any_failed; then
+          value="❌"
+        elif [[ "$VALIDATE_TEMPLATE" == "✅" && \
+                "$PARSE_FIELDS"     == "✅" && \
+                "$APPLY_LABELS"     == "✅" && \
+                "$NOTIFY_ADMINS"    == "✅" && \
+                "$RUN_COMPARISON"   == "✅" && \
+                "$VERIFY_RESULTS"   == "✅" && \
+                "$PUBLISH_REPORT"   == "✅" ]]; then
+          value="✅"
+        else
+          value="⏳"
+        fi
+        echo "value=$value" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/checkout@v5
+
+    - name: Render template
+      id: template
+      uses: chuhlomin/render-template@807354a04d9300c9c2ac177c0aa41556c92b3f75 # v1.10
+      with:
+        template: .github/verification-progress-template.md
+        vars: |
+          details_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          validate_template: ${{ inputs.validate_template }}
+          parse_fields: ${{ inputs.parse_fields }}
+          apply_labels: ${{ inputs.apply_labels }}
+          notify_admins: ${{ inputs.notify_admins }}
+          run_comparison: ${{ inputs.run_comparison }}
+          verify_results: ${{ inputs.verify_results }}
+          publish_report: ${{ inputs.publish_report }}
+          status: ${{ steps.status.outputs.value }}
+
+    - name: Determine edit-mode
+      id: edit-mode
+      shell: bash
+      env:
+        COMMENT_ID: ${{ inputs.comment-id }}
+      run: |
+        if [[ -n "$COMMENT_ID" ]]; then
+          echo "value=replace" >> "$GITHUB_OUTPUT"
+        else
+          echo "value=append" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Post or update progress comment
+      id: couc
+      uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4.0.0
+      with:
+        comment-id: ${{ inputs.comment-id }}
+        issue-number: ${{ inputs.issue-number }}
+        body: ${{ steps.template.outputs.result }}
+        edit-mode: ${{ steps.edit-mode.outputs.value }}

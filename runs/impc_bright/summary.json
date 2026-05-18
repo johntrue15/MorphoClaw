@@ -1,0 +1,171 @@
+{
+  "volume": "IMPC_sample_data",
+  "shape_kji": [
+    421,
+    258,
+    259
+  ],
+  "threshold": 102.0,
+  "n_candidates_initial": 100000,
+  "steps": 8,
+  "history": [
+    {
+      "status": "ok",
+      "picked_ijk": [
+        161,
+        93,
+        147
+      ],
+      "intensity": 255.0,
+      "voxels_before": 0,
+      "voxels_after": 23814,
+      "delta": 23814,
+      "new_voxels_at_picked": 1,
+      "click_positive": true,
+      "skipped_inside": 0,
+      "candidates_left": 99999,
+      "click_seconds": 0.78,
+      "_dt_s": 1.193
+    },
+    {
+      "status": "ok",
+      "picked_ijk": [
+        113,
+        87,
+        159
+      ],
+      "intensity": 226.0,
+      "voxels_before": 23814,
+      "voxels_after": 77343,
+      "delta": 53529,
+      "new_voxels_at_picked": 1,
+      "click_positive": true,
+      "skipped_inside": 119,
+      "candidates_left": 99879,
+      "click_seconds": 0.513,
+      "_dt_s": 1.034
+    },
+    {
+      "status": "ok",
+      "picked_ijk": [
+        156,
+        110,
+        168
+      ],
+      "intensity": 218.0,
+      "voxels_before": 77343,
+      "voxels_after": 154634,
+      "delta": 77291,
+      "new_voxels_at_picked": 1,
+      "click_positive": true,
+      "skipped_inside": 452,
+      "candidates_left": 99426,
+      "click_seconds": 0.515,
+      "_dt_s": 1.03
+    },
+    {
+      "status": "ok",
+      "picked_ijk": [
+        164,
+        152,
+        278
+      ],
+      "intensity": 185.0,
+      "voxels_before": 154634,
+      "voxels_after": 259708,
+      "delta": 105074,
+      "new_voxels_at_picked": 1,
+      "click_positive": true,
+      "skipped_inside": 15275,
+      "candidates_left": 84150,
+      "click_seconds": 1.569,
+      "_dt_s": 2.126
+    },
+    {
+      "status": "ok",
+      "picked_ijk": [
+        150,
+        106,
+        202
+      ],
+      "intensity": 183.0,
+      "voxels_before": 259708,
+      "voxels_after": 268923,
+      "delta": 9215,
+      "new_voxels_at_picked": 1,
+      "click_positive": true,
+      "skipped_inside": 1846,
+      "candidates_left": 82303,
+      "click_seconds": 1.469,
+      "_dt_s": 2.003
+    },
+    {
+      "status": "ok",
+      "picked_ijk": [
+        121,
+        132,
+        328
+      ],
+      "intensity": 179.0,
+      "voxels_before": 268923,
+      "voxels_after": 340660,
+      "delta": 71737,
+      "new_voxels_at_picked": 1,
+      "click_positive": true,
+      "skipped_inside": 4877,
+      "candidates_left": 77425,
+      "click_seconds": 0.559,
+      "_dt_s": 1.102
+    },
+    {
+      "status": "ok",
+      "picked_ijk": [
+        91,
+        145,
+        275
+      ],
+      "intensity": 176.0,
+      "voxels_before": 340660,
+      "voxels_after": 402727,
+      "delta": 62067,
+      "new_voxels_at_picked": 1,
+      "click_positive": true,
+      "skipped_inside": 4396,
+      "candidates_left": 73028,
+      "click_seconds": 0.591,
+      "_dt_s": 1.133
+    },
+    {
+      "status": "ok",
+      "picked_ijk": [
+        140,
+        134,
+        179
+      ],
+      "intensity": 174.0,
+      "voxels_before": 402727,
+      "voxels_after": 890816,
+      "delta": 488089,
+      "new_voxels_at_picked": 1,
+      "click_positive": true,
+      "skipped_inside": 3877,
+      "candidates_left": 69150,
+      "click_seconds": 2.008,
+      "_dt_s": 2.569
+    }
+  ],
+  "args": {
+    "volume": "IMPC_sample_data",
+    "reset_first": true,
+    "intensity_percentile": 99.0,
+    "max_candidates": 100000,
+    "max_steps": 15,
+    "min_delta": 50,
+    "patience": 3,
+    "max_explosion_frac": 0.4,
+    "no_screenshots": false,
+    "out_dir": "runs/impc_bright"
+  },
+  "final_voxel_count": 890816,
+  "final_voxel_fraction": 0.0317
+}

@@ -1,0 +1,115 @@
+name: "Extract issue fields"
+description: >
+  Parse the body of a comparison-request issue (YAML form template) and expose
+  individual fields as outputs. Mirrors the
+  MorphoCloud/MorphoCloudInstances `extract-issue-fields` action, adapted to
+  the field IDs used by this repository's `comparison_request.yml` template.
+
+inputs:
+  token:
+    description: "GITHUB_TOKEN or repo-scoped PAT used to fetch the issue"
+    required: true
+  repository:
+    description: "owner/name of the repo containing the issue"
+    required: true
+  issue_number:
+    description: "Issue number to extract fields from"
+    required: true
+
+outputs:
+  title:
+    description: "Issue title"
+    value: ${{ steps.read_issue_title.outputs.title }}
+  comparison_mode:
+    description: "Selected comparison mode (mapped to short slug)"
+    value: ${{ steps.normalize.outputs.comparison_mode }}
+  input_source:
+    description: "Selected input source"
+    value: ${{ steps.extract.outputs.input-source }}
+  description:
+    description: "Free-text description"
+    value: ${{ steps.extract.outputs.description }}
+  query_csv:
+    description: "Pasted CSV / dataset block"
+    value: ${{ steps.extract.outputs.query-csv }}
+  expected_results_count:
+    description: "Expected result count (may be empty)"
+    value: ${{ steps.extract.outputs.expected-results-count }}
+  orcid:
+    description: "ORCID iD"
+    value: ${{ steps.extract.outputs.orcid }}
+  email:
+    description: "Email"
+    value: ${{ steps.normalize.outputs.email }}
+  confirm_email:
+    description: "Confirm Email"
+    value: ${{ steps.normalize.outputs.confirm_email }}
+  additional_context:
+    description: "Additional Context"
+    value: ${{ steps.extract.outputs.additional-context }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Fetch the issue title
+      id: read_issue_title
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ inputs.repository }}
+        ISSUE_NUMBER: ${{ inputs.issue_number }}
+      run: |
+        title=$(gh issue view "$ISSUE_NUMBER" --json title --jq .title)
+        {
+          echo "title<<EOF"
+          echo "$title"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Fetch the issue body
+      id: read_issue_body
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ inputs.repository }}
+        ISSUE_NUMBER: ${{ inputs.issue_number }}
+      run: |
+        body=$(gh issue view "$ISSUE_NUMBER" --json body --jq .body)
+        {
+          echo "body<<EOF"
+          echo "$body"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Parse issue body
+      id: extract
+      uses: stefanbuck/github-issue-parser@c1a559d78bfb8dd05216dab9ffd2b91082ff5324 # v3.2.1
+      with:
+        template-path: .github/ISSUE_TEMPLATE/comparison_request.yml
+        issue-body: ${{ steps.read_issue_body.outputs.body }}
+
+    - name: Normalize selected fields
+      id: normalize
+      shell: bash
+      env:
+        COMPARISON_MODE_RAW: ${{ steps.extract.outputs.comparison-mode }}
+        EMAIL_RAW: ${{ steps.extract.outputs.email }}
+        CONFIRM_EMAIL_RAW: ${{ steps.extract.outputs.confirm-email }}
+      run: |
+        # The dropdown value carries a trailing description after a double space,
+        # e.g. "verify_pixel_spacing  (audit pixel spacing for a dataset)".
+        # Reduce it to the leading slug.
+        comparison_mode="${COMPARISON_MODE_RAW%% *}"
+        echo "comparison_mode=$comparison_mode" >> "$GITHUB_OUTPUT"
+
+        # Strip surrounding < > if GitHub auto-linkified the email field.
+        email=$(printf '%s' "$EMAIL_RAW" | sed -E 's/^<([^<>]+)>$/\1/')
+        confirm_email=$(printf '%s' "$CONFIRM_EMAIL_RAW" | sed -E 's/^<([^<>]+)>$/\1/')
+
+        # Older issues may not have the confirm-email field; default to email.
+        if [[ -z "$confirm_email" ]]; then
+          confirm_email="$email"
+        fi
+
+        echo "email=$email" >> "$GITHUB_OUTPUT"
+        echo "confirm_email=$confirm_email" >> "$GITHUB_OUTPUT"

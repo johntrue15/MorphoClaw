@@ -33,10 +33,14 @@ To force the full integration tier::
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
+import signal
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -209,10 +213,12 @@ SLICER_TIMEOUT_S = int(os.environ.get("SLICER_TEST_TIMEOUT_S", "180"))
 def _run_slicer_load(model_path: Path, tmp_path: Path, require_slicermorph: bool = False) -> dict:
     """Spawn Slicer headlessly to load ``model_path`` and return the JSON result.
 
-    Uses ``--testing --no-splash --no-main-window`` which is the same
-    combination ``slicer_advanced_analysis.py`` relies on in production.
-    Falls the test (rather than the whole CI job) if Slicer hangs past
-    ``SLICER_TEST_TIMEOUT_S``.
+    Uses ``--no-splash --no-main-window`` which is the same combination
+    ``slicer_advanced_analysis.py`` relies on in production.  We do NOT
+    pass ``--testing`` here -- on macOS that flag tends to make Slicer
+    sit in its event loop indefinitely after the script returns,
+    blowing the per-test timeout.  Fails the test (rather than the
+    whole CI job) if Slicer hangs past ``SLICER_TEST_TIMEOUT_S``.
     """
     slicer_bin = _slicer_bin()
     if slicer_bin is None:
@@ -225,56 +231,113 @@ def _run_slicer_load(model_path: Path, tmp_path: Path, require_slicermorph: bool
     env["SLICER_MIN_POINTS"] = "1"
     if require_slicermorph:
         env["SLICER_REQUIRE_SLICERMORPH"] = "1"
-    # Force a software-GL backend on headless runners where there is no display.
-    env.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
-    env.setdefault("QT_QPA_PLATFORM", "offscreen")
+    # On Linux headless runners (e.g. Xvfb-less containers) the Qt
+    # "offscreen" plugin lets Slicer come up without a display server.
+    # macOS Slicer.app only ships the "cocoa" plugin, so we deliberately
+    # do NOT set QT_QPA_PLATFORM there -- forcing "offscreen" makes the
+    # process die at startup with "Could not find the Qt platform
+    # plugin 'offscreen'".
+    if sys.platform.startswith("linux"):
+        env.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
+        env.setdefault("QT_QPA_PLATFORM", "offscreen")
 
     cmd = [
         str(slicer_bin),
-        "--testing",
         "--no-splash",
         "--no-main-window",
         "--python-script",
         str(LOAD_TEST_SCRIPT),
     ]
 
+    # Strategy: launch Slicer detached, poll for the JSON file, then
+    # kill the process. ``subprocess.run`` blocks waiting for the Slicer
+    # Mach-O process to terminate, and on macOS Slicer's Qt threads keep
+    # the process alive for several minutes after the embedded Python
+    # has called ``os._exit`` -- that's far longer than a CI step can
+    # afford. Polling the on-disk JSON sidesteps the parent-wait
+    # entirely and finishes as soon as the actual work is done.
+    stdout_path = tmp_path / "slicer.stdout.log"
+    stderr_path = tmp_path / "slicer.stderr.log"
+    poll_interval_s = 0.5
+    deadline = time.monotonic() + SLICER_TIMEOUT_S
+
+    so = stdout_path.open("wb")
+    se = stderr_path.open("wb")
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
-            capture_output=True,
-            text=True,
-            timeout=SLICER_TIMEOUT_S,
+            stdout=so,
+            stderr=se,
             env=env,
-            check=False,
+            start_new_session=True,  # so we can SIGKILL the whole pgroup
         )
-    except subprocess.TimeoutExpired as exc:
-        pytest.fail(
-            f"Slicer load probe timed out after {SLICER_TIMEOUT_S}s.\n"
-            f"Model: {model_path}\n"
-            f"Partial stdout:\n{(exc.stdout or b'')[-500:]!r}\n"
-            f"Partial stderr:\n{(exc.stderr or b'')[-500:]!r}"
-        )
+    except OSError as exc:
+        so.close()
+        se.close()
+        pytest.fail(f"Could not launch Slicer: {exc!r}")
 
-    if out_path.exists():
-        try:
-            return json.loads(out_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            pass
-    # Fallback: try to recover a JSON blob from stdout.
-    stdout = proc.stdout or ""
-    start = stdout.rfind("{")
-    end = stdout.rfind("}")
-    if 0 <= start < end:
-        try:
-            return json.loads(stdout[start : end + 1])
-        except json.JSONDecodeError:
-            pass
+    payload: dict | None = None
+    try:
+        while time.monotonic() < deadline:
+            # Either the JSON appears (success path) or the process exits
+            # on its own (early-failure path); both let us stop waiting.
+            if out_path.exists():
+                # Give Slicer a beat to finish flushing the file.
+                time.sleep(0.1)
+                try:
+                    payload = json.loads(out_path.read_text(encoding="utf-8"))
+                    break
+                except json.JSONDecodeError:
+                    pass
+            if proc.poll() is not None:
+                break
+            time.sleep(poll_interval_s)
+    finally:
+        # Terminate the (likely still-running) Slicer process group.
+        if proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+                # Give Qt a couple seconds to clean up.
+                try:
+                    proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                    with contextlib.suppress(subprocess.TimeoutExpired):
+                        proc.wait(timeout=3)
+            except (ProcessLookupError, PermissionError):
+                pass
+        so.close()
+        se.close()
 
+    if payload is not None:
+        return payload
+
+    # Fallback: try to recover a JSON blob delimited by our sentinel
+    # markers from stdout.
+    stdout = (
+        stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.exists() else ""
+    )
+    marker_start = stdout.find("SLICER_LOAD_TEST_RESULT_BEGIN")
+    marker_end = stdout.find("SLICER_LOAD_TEST_RESULT_END")
+    if 0 <= marker_start < marker_end:
+        blob = stdout[marker_start:marker_end]
+        start = blob.find("{")
+        end = blob.rfind("}")
+        if 0 <= start < end:
+            try:
+                return json.loads(blob[start : end + 1])
+            except json.JSONDecodeError:
+                pass
+
+    stderr = (
+        stderr_path.read_text(encoding="utf-8", errors="replace") if stderr_path.exists() else ""
+    )
     pytest.fail(
-        "Slicer load probe produced no parseable JSON.\n"
+        "Slicer load probe produced no parseable JSON within "
+        f"{SLICER_TIMEOUT_S}s.\n"
         f"exit_code={proc.returncode}\n"
         f"stdout tail:\n{stdout[-500:]}\n"
-        f"stderr tail:\n{(proc.stderr or '')[-500:]}"
+        f"stderr tail:\n{stderr[-500:]}"
     )
 
 

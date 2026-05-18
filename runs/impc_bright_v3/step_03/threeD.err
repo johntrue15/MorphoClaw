@@ -1,0 +1,1 @@
+TypeError("cannot convert 'QByteArray' object to bytes")

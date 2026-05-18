@@ -396,23 +396,28 @@ class Segmenter:
 def make_segmenter(config: SegmenterConfig):
     """Pick the local or remote nnInteractive backend.
 
-    If the ``NNI_REMOTE_WS`` environment variable is set (e.g.
-    ``ws://localhost:8765``), a :class:`RemoteSegmenter` is returned that
-    talks to a remote nnInteractive WebSocket server (see
-    ``.github/scripts/nni_ws_server.py``) and stays API-compatible with
-    :class:`Segmenter`. Otherwise, a local :class:`Segmenter` is returned.
-
-    The remote path is preferred on memory-constrained machines (e.g. a
-    16 GB Mac mini) where loading nnInteractive's nnU-Net model triggers
+    If ``NNI_REMOTE_URL`` (preferred) or the legacy ``NNI_REMOTE_WS`` is
+    set, a :class:`RemoteSegmenter` is returned that talks to an upstream
+    SlicerNNInteractive FastAPI server
+    (https://github.com/coendevente/SlicerNNInteractive) over HTTP. The
+    remote path is preferred on memory-constrained machines (e.g. a 16 GB
+    Mac mini) where loading nnInteractive's nnU-Net model triggers
     OS-level OOM kills during inference. Heavy lifting (model + inference)
-    happens on the remote box; volume/mask rendering still happens locally.
+    happens on the remote box; volume/mask rendering and labelmap export
+    still happen locally so we keep the original SimpleITK geometry.
+
+    Otherwise, a local :class:`Segmenter` is returned.
     """
-    remote_url = os.environ.get("NNI_REMOTE_WS", "").strip()
+    remote_url = (
+        os.environ.get("NNI_REMOTE_URL", "").strip()
+        or os.environ.get("NNI_REMOTE_WS", "").strip()
+    )
     if remote_url:
-        # Imported lazily so the local environment doesn't need the
-        # websocket dependency unless we're actually using a remote server.
+        # Imported lazily so the local environment doesn't need numpy +
+        # SimpleITK + requests/urllib unless we're actually using the
+        # remote server.
         from nninteractive_remote import RemoteSegmenter  # noqa: WPS433
-        return RemoteSegmenter(config, ws_url=remote_url)
+        return RemoteSegmenter(config)
     return Segmenter(config)
 
 

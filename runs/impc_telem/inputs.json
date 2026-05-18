@@ -1,0 +1,28 @@
+{
+  "status": "ok",
+  "volume_id": "vtkMRMLScalarVolumeNode1",
+  "volume_name": "IMPC_sample_data",
+  "shape_kji": [
+    421,
+    258,
+    259
+  ],
+  "dtype": "uint8",
+  "nbytes": 28132062,
+  "spacing_mm": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "origin": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "scalar_min": 0.0,
+  "scalar_max": 255.0,
+  "scalar_mean": 10.683694675491616,
+  "sha256_voxels": "e9a958890f6529766f025feea9645e572ba218c73bda185262c40be5bdac5389",
+  "source_filename": "/home/exouser/.cache/slicer.org/Slicer/SlicerIO/IMPC_sample_data.nrrd",
+  "_dt_s": 0.306
+}

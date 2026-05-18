@@ -1,0 +1,109 @@
+name: Comparison / Verification Request
+description: Request an automated metadata-to-MorphoSource comparison or verification run.
+title: "Comparison: "
+labels:
+  - request-type:comparison
+  - request-creator:user
+  - status:queued
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to request an **automated metadata-to-MorphoSource comparison** or
+        a **verification run** against an existing dataset. The repository's GitHub Actions
+        will pick up the form fields, post a progress checklist comment with emoji status
+        markers (⏳/✅/❌), and notify the maintainers.
+
+        Please give the issue a short, descriptive title after `Comparison:` (e.g.,
+        `Comparison: bryozoan microCT scans; Jane Doe`).
+
+  - type: dropdown
+    id: comparison-mode
+    attributes:
+      label: Comparison Mode
+      description: Select what the automation should run.
+      options:
+        - "show_me_scans  (list MorphoSource scans matching a query)"
+        - "tell_me_how_many_scans  (count MorphoSource scans matching a query)"
+        - "find_me_fossils  (locate fossil specimens in MorphoSource)"
+        - "verify_pixel_spacing  (audit pixel spacing for a dataset)"
+        - "compare_metadata  (full metadata diff vs MorphoSource)"
+        - "other (describe in Additional Context)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: input-source
+    attributes:
+      label: Input Source
+      description: Where the automation should pull the input query/data from.
+      options:
+        - morphosource-api
+        - local-csv (attached or referenced in this issue)
+        - url (publicly downloadable resource)
+        - both (api + local-csv)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: |
+        Briefly describe the dataset, the comparison you want, and any expectations.
+        Include scientific names, taxa, scan types, or DOI links if relevant.
+      placeholder: |
+        I have a CSV of microCT metadata for ~200 specimens and want to compare it to
+        MorphoSource records to flag missing pixel-spacing and resolution fields...
+    validations:
+      required: true
+
+  - type: textarea
+    id: query-csv
+    attributes:
+      label: Query / Dataset
+      description: |
+        Paste a CSV/TSV snippet, a MorphoSource query, or a URL to the dataset.
+        For large datasets, attach the file to this issue and reference its name here.
+      render: csv
+    validations:
+      required: true
+
+  - type: input
+    id: expected-results-count
+    attributes:
+      label: Expected Result Count (optional)
+      description: |
+        If you know roughly how many records the comparison should return, enter
+        the number here so the verification step can sanity-check the output.
+      placeholder: "e.g., 200"
+
+  - type: input
+    id: orcid
+    attributes:
+      label: ORCID iD
+      description: Your ORCID iD for citation/credit in the verification report.
+      placeholder: 0000-0000-0000-0000
+
+  - type: input
+    id: email
+    attributes:
+      label: Email
+      description: Email address that should receive notifications about this request.
+    validations:
+      required: true
+
+  - type: input
+    id: confirm-email
+    attributes:
+      label: Confirm Email
+      description: Re-enter your email address to confirm.
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Anything else the maintainers or the verification pipeline should know.

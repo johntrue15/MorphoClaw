@@ -1,0 +1,161 @@
+name: "Issue Commands"
+
+# Slash-command dispatcher for comparison-request issues.
+#
+# Recognized commands (must be the first non-whitespace text on a comment line):
+#   /approve         - maintainer approves the request
+#   /unapprove       - maintainer revokes approval
+#   /verify          - run the verification pipeline (alias: /run-comparison)
+#   /run-comparison  - alias for /verify
+#   /help            - re-post the issue-commands help comment
+#
+# Authorization:
+#   * /approve and /unapprove are restricted to users with `triage` or higher
+#     repo permissions (i.e., maintainers).
+#   * /verify and /run-comparison can be issued by maintainers OR by the issue
+#     author, but only after `request:verified` is present.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  contents: read
+  checks: read
+  actions: write   # needed to dispatch verify-comparison.yml via `gh workflow run`
+
+jobs:
+  dispatch:
+    if: ${{ !github.event.issue.pull_request && github.event.comment.user.type != 'Bot' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Detect command
+        id: detect
+        shell: bash
+        env:
+          BODY: ${{ github.event.comment.body }}
+        run: |
+          # Look for a known slash command at the start of any line.
+          command=""
+          while IFS= read -r line; do
+            line_trimmed="${line#"${line%%[![:space:]]*}"}"
+            case "$line_trimmed" in
+              "/approve"*)        command="approve" ;;
+              "/unapprove"*)      command="unapprove" ;;
+              "/verify"*)         command="verify" ;;
+              "/run-comparison"*) command="verify" ;;
+              "/help"*)           command="help" ;;
+            esac
+            if [[ -n "$command" ]]; then break; fi
+          done <<< "$BODY"
+
+          echo "command=$command" >> "$GITHUB_OUTPUT"
+          if [[ -z "$command" ]]; then
+            echo "No supported command in comment; skipping."
+          else
+            echo "Detected command: /$command"
+          fi
+
+      - name: React to comment with rocket
+        if: ${{ steps.detect.outputs.command != '' }}
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+
+      - name: Check actor permission
+        if: ${{ steps.detect.outputs.command != '' }}
+        id: perm
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const actor = context.payload.comment.user.login;
+            const author = context.payload.issue.user.login;
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: actor
+            });
+            const level = data.permission; // none | read | triage | write | maintain | admin
+            const isMaintainer = ['triage','write','maintain','admin'].includes(level);
+            const isAuthor = actor === author;
+            core.setOutput('actor', actor);
+            core.setOutput('author', author);
+            core.setOutput('level', level);
+            core.setOutput('is_maintainer', String(isMaintainer));
+            core.setOutput('is_author', String(isAuthor));
+
+      - uses: actions/checkout@v5
+        if: ${{ steps.detect.outputs.command != '' }}
+
+      # ---- /help -------------------------------------------------------------
+
+      - name: /help — re-post commands list
+        if: ${{ steps.detect.outputs.command == 'help' }}
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4.0.0
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body-path: ".github/issue-commands.md"
+
+      # ---- /approve and /unapprove (maintainers only) ------------------------
+
+      - name: Reject /approve from non-maintainer
+        if: ${{ (steps.detect.outputs.command == 'approve' || steps.detect.outputs.command == 'unapprove') && steps.perm.outputs.is_maintainer != 'true' }}
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4.0.0
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            ❌ `/${{ steps.detect.outputs.command }}` can only be issued by maintainers
+            (triage permission or higher). Detected permission for **${{ steps.perm.outputs.actor }}**: `${{ steps.perm.outputs.level }}`.
+
+      - name: Run /approve or /unapprove
+        if: ${{ (steps.detect.outputs.command == 'approve' || steps.detect.outputs.command == 'unapprove') && steps.perm.outputs.is_maintainer == 'true' }}
+        uses: ./.github/actions/update-approval
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue_number: ${{ github.event.issue.number }}
+          command_name: ${{ steps.detect.outputs.command }}
+          actor: ${{ steps.perm.outputs.actor }}
+
+      # ---- /verify (maintainers OR author once approved) ---------------------
+
+      - name: Check approval before /verify
+        if: ${{ steps.detect.outputs.command == 'verify' }}
+        id: approval
+        uses: ./.github/actions/check-approval
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue_number: ${{ github.event.issue.number }}
+
+      - name: Reject /verify when not approved or unauthorized
+        if: ${{ steps.detect.outputs.command == 'verify' && (steps.approval.outputs.is_approved != 'true' || (steps.perm.outputs.is_maintainer != 'true' && steps.perm.outputs.is_author != 'true')) }}
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4.0.0
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            ❌ `/verify` is unavailable.
+
+            * approved: `${{ steps.approval.outputs.is_approved }}`
+            * actor is maintainer: `${{ steps.perm.outputs.is_maintainer }}`
+            * actor is issue author: `${{ steps.perm.outputs.is_author }}`
+
+            A maintainer must run `/approve` before the issue author can run `/verify`.
+
+      - name: Trigger verify-comparison workflow
+        if: ${{ steps.detect.outputs.command == 'verify' && steps.approval.outputs.is_approved == 'true' && (steps.perm.outputs.is_maintainer == 'true' || steps.perm.outputs.is_author == 'true') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ACTOR: ${{ steps.perm.outputs.actor }}
+        run: |
+          gh workflow run verify-comparison.yml \
+            --ref "${GITHUB_REF_NAME:-main}" \
+            -f issue_number="$ISSUE_NUMBER" \
+            -f actor="$ACTOR"

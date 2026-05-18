@@ -1,0 +1,50 @@
+name: "Update Request Status Label"
+description: >
+  Set a `status:*` label on an issue, removing any other `status:*` labels so
+  that exactly one is present at a time. Adapted from MorphoCloud/MorphoCloudInstances
+  `update-request-status-label` (with the OpenStack lookup removed).
+
+inputs:
+  token:
+    description: "GITHUB_TOKEN or repo-scoped PAT"
+    required: true
+  issue_number:
+    description: "Issue number"
+    required: true
+  status:
+    description: >
+      Status slug to apply (without the `status:` prefix). Examples:
+      queued, validating, awaiting-approval, running, verifying, completed, failed.
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Update status label
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+        ISSUE_NUMBER: ${{ inputs.issue_number }}
+        STATUS: ${{ inputs.status }}
+      run: |
+        status_lowercase="${STATUS,,}"
+        add_label="status:${status_lowercase}"
+
+        # Build a comma-separated list of any other status:* labels currently on
+        # the issue so we can remove them in a single edit.
+        remove_labels=$(gh issue view "$ISSUE_NUMBER" --json labels | \
+          jq \
+            -r \
+            --arg add_label "$add_label" \
+            -c '[.labels[].name | select(test("^status:")?) | select(. != $add_label)] | join(",")')
+
+        echo "Updating issue $ISSUE_NUMBER: adding [$add_label]; removing [$remove_labels]"
+
+        if [[ -n "$remove_labels" ]]; then
+          gh issue edit "$ISSUE_NUMBER" \
+            --add-label "$add_label" \
+            --remove-label "$remove_labels"
+        else
+          gh issue edit "$ISSUE_NUMBER" --add-label "$add_label"
+        fi

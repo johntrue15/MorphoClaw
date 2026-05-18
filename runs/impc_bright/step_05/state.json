@@ -1,0 +1,18 @@
+{
+  "status": "ok",
+  "picked_ijk": [
+    121,
+    132,
+    328
+  ],
+  "intensity": 179.0,
+  "voxels_before": 268923,
+  "voxels_after": 340660,
+  "delta": 71737,
+  "new_voxels_at_picked": 1,
+  "click_positive": true,
+  "skipped_inside": 4877,
+  "candidates_left": 77425,
+  "click_seconds": 0.559,
+  "_dt_s": 1.102
+}

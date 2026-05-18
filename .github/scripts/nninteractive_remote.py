@@ -1,416 +1,449 @@
 """
-Remote nnInteractive backend over WebSocket.
+Remote nnInteractive backend over HTTP (SlicerNNInteractive server).
 
 This module implements ``RemoteSegmenter``, a drop-in replacement for the
-local :class:`nninteractive_segment.Segmenter`. It speaks to an
-``nni_ws_server.py`` instance running on a beefier machine (e.g. a
-MorphoCloud / Jetstream2 VM) and proxies every prompt over a single
-persistent WebSocket connection.
+local :class:`nninteractive_segment.Segmenter`. It speaks the public HTTP
+API of the upstream SlicerNNInteractive FastAPI server
+(https://github.com/coendevente/SlicerNNInteractive), so we don't ship
+our own server code at all.
 
 Why
 ---
 Heavy nnU-Net 3D inference doesn't fit in a 16 GB Mac mini's RAM
 (empirically peaks at ~10.5 GB on a 119^3 volume at 1 thread; >16 GB at
-4 threads -> SIGKILL). Running the model on a 30+ GB cloud box, with the
-orchestration loop and OPENAI_API_KEY still on the local machine, is the
-clean fix.
+4 threads -> SIGKILL). The SlicerNNInteractive server runs the model on
+a beefier box (typically a Jetstream2 / MorphoCloud GPU instance) and
+exposes a tiny FastAPI surface over HTTP. The Exosphere any-port
+HTTPS reverse proxy in front of MorphoCloud means we don't need SSH or
+a tunnel — we just point requests at
+``https://http-<ip-with-dashes>-<port>.proxy-js2-iu.exosphere.app/``.
 
-Wire protocol (v1)
-------------------
-The connection is single-session: one client manages one volume at a
-time. Frames are either JSON text or raw binary. Every server reply that
-carries bulk data (a mask, a screenshot, a labelmap) is a JSON envelope
-followed by exactly one binary frame.
+Wire protocol (the upstream server's, verbatim)
+-----------------------------------------------
+* ``POST /upload_image``
+    multipart ``file=*.npy`` (uncompressed)
+    body: ``np.save(buf, arr)`` where ``arr`` has shape (z, y, x).
+    reply: ``{"status": "ok"}``
 
-Client -> Server (JSON):
-    {"op": "hello", "version": 1}
-    {"op": "load_image",
-        "shape_zyx": [Z, Y, X],
-        "spacing_xyz": [sx, sy, sz],
-        "origin_xyz": [ox, oy, oz],
-        "direction": [d0..d8],
-        "dtype": "float32" | "int16" | "uint8",
-        "media_id": "...",
-        "size_bytes": N,
-        "compression": "none" | "gzip"}
-    <binary frame: raw volume bytes (zyx order), length size_bytes>
+* ``POST /upload_segment``
+    multipart ``file=*.npy.gz`` (gzipped) — used here to reset the
+    segmentation by uploading an all-zeros mask.
 
-    {"op": "add_point", "x": int, "y": int, "z": int,
-                        "positive": bool, "label": "..."}
-    {"op": "add_bbox",  "x": [x0,x1], "y": [y0,y1], "z": [z0,z1],
-                        "positive": bool, "label": "..."}
-    {"op": "reset"}
-    {"op": "get_mask", "compression": "gzip"}
-    {"op": "info"}
-    {"op": "ping"}
-    {"op": "close"}
+* ``POST /add_point_interaction``
+    JSON ``{"voxel_coord": [x, y, z], "positive_click": bool}``
+    reply: gzipped 1-bit-per-voxel packed mask (Content-Encoding: gzip)
 
-Server -> Client (JSON, optionally followed by one binary frame):
-    {"op": "hello_ack", "version": 1, "device": "cuda:0",
-        "model": "nnInteractive_v1.0", "model_loaded": true}
-    {"op": "loaded", "shape_zyx": [...], "spacing_xyz": [...],
-        "duration_s": 4.2}
-    {"op": "step_done", "voxel_count": int, "duration_s": float,
-        "mask_size_bytes": M, "compression": "gzip"}
-    <binary frame: gzipped uint8 mask in zyx order, length mask_size_bytes>
-    {"op": "info_reply", "memory_gb": float, ...}
-    {"op": "pong"}
-    {"op": "error", "message": "...", "context": "..."}
+* ``POST /add_bbox_interaction``
+    JSON ``{"outer_point_one": [x0, y0, z0],
+            "outer_point_two": [x1, y1, z1],
+            "positive_click": bool}``
+    reply: gzipped 1-bit-per-voxel packed mask
+
+* ``POST /add_lasso_interaction`` / ``/add_scribble_interaction``
+    multipart ``file=mask.npy.gz`` + form ``positive_click=str``
+    (not used by the current paint loop)
+
+The mask is unpacked locally with ``np.unpackbits`` and reshaped to the
+volume's (z, y, x) shape.
 
 Notes
 -----
-- The server compresses masks (uint8, mostly zeros) with gzip by default;
-  for a 119^3 volume with a few thousand foreground voxels this brings
-  the per-step transfer from ~1.7 MB to a few KB.
-- The volume is uploaded once at session start; subsequent prompts only
-  exchange small JSON + small mask bytes.
-- Rendering of orthogonal previews and saving of the final NIfTI labelmap
+* Rendering of orthogonal previews and saving of the final NIfTI labelmap
   happens locally, using the original volume's SimpleITK geometry. The
   remote box never needs SimpleITK or matplotlib.
+* The upstream server has no built-in auth; the Exosphere proxy URL
+  itself is the secret. Set ``NNI_REMOTE_URL`` in your local ``.env`` and
+  treat the URL like a token. (For old envs that still have
+  ``NNI_REMOTE_WS=wss://…``, the URL is auto-translated to https://.)
+* Uses the local ``requests`` library; falls back to a small
+  ``urllib``-based pure-stdlib client if requests isn't available, so
+  that we don't bring an extra dependency into the parent venv.
 """
 
 from __future__ import annotations
 
 import gzip
+import io
 import json
 import logging
 import os
-import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
-# Defer heavy imports (websocket-client, SimpleITK, numpy, matplotlib) to
-# the methods that actually need them so importing this module is cheap
-# and so that very small CLIs (e.g. ping the server) don't pay the cost.
+import numpy as np
+import SimpleITK as sitk
 
-log = logging.getLogger("nninteractive.remote")
-
-
-PROTOCOL_VERSION = 1
-DEFAULT_WS_URL = os.environ.get("NNI_REMOTE_WS", "ws://localhost:8765")
-DEFAULT_RECV_TIMEOUT_S = float(
-    os.environ.get("NNI_REMOTE_RECV_TIMEOUT_S", "600")
-)
+log = logging.getLogger("nninteractive_remote_http")
 
 
-class RemoteSegmenterError(RuntimeError):
-    """Raised on protocol/transport errors against the WS server."""
+# ---------------------------------------------------------------------------
+# Tiny HTTP shim: prefer requests, fall back to urllib so we stay
+# dependency-light when running from the parent venv.
+# ---------------------------------------------------------------------------
+
+try:
+    import requests as _requests
+    _HAS_REQUESTS = True
+except Exception:  # pragma: no cover
+    _HAS_REQUESTS = False
+    _requests = None
 
 
-# Re-export the same Prompt dataclass so RemoteSegmenter looks identical
-# to the local Segmenter from the loop's point of view.
-from nninteractive_segment import Prompt, SegmenterConfig  # noqa: E402
+@dataclass
+class _Resp:
+    status: int
+    headers: dict
+    content: bytes
 
+    def json(self):
+        return json.loads(self.content.decode("utf-8"))
+
+    def raise_for_status(self):
+        if not (200 <= self.status < 300):
+            preview = self.content[:300].decode("utf-8", errors="replace")
+            raise RuntimeError(f"HTTP {self.status}: {preview}")
+
+
+def _post_json(url: str, payload: dict, timeout: float) -> _Resp:
+    if _HAS_REQUESTS:
+        r = _requests.post(url, json=payload, timeout=timeout)
+        return _Resp(r.status_code, dict(r.headers), r.content)
+    import urllib.request
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return _Resp(resp.status, dict(resp.headers), resp.read())
+
+
+def _post_multipart(url: str, file_field: str, file_bytes: bytes,
+                    file_name: str, timeout: float,
+                    extra_form: Optional[dict] = None) -> _Resp:
+    if _HAS_REQUESTS:
+        files = {file_field: (file_name, file_bytes, "application/octet-stream")}
+        r = _requests.post(
+            url, files=files, data=extra_form or {}, timeout=timeout,
+        )
+        return _Resp(r.status_code, dict(r.headers), r.content)
+
+    # Hand-rolled multipart for the urllib fallback. Boundary is fixed
+    # per-call but unique enough; keep it simple.
+    import urllib.request
+    boundary = f"----nni-{int(time.time()*1e6):x}"
+    parts: list[bytes] = []
+    if extra_form:
+        for k, v in extra_form.items():
+            parts.append(f"--{boundary}\r\n".encode())
+            parts.append(
+                f'Content-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
+            )
+    parts.append(f"--{boundary}\r\n".encode())
+    parts.append(
+        f'Content-Disposition: form-data; name="{file_field}"; '
+        f'filename="{file_name}"\r\n'
+        "Content-Type: application/octet-stream\r\n\r\n".encode()
+    )
+    parts.append(file_bytes)
+    parts.append(f"\r\n--{boundary}--\r\n".encode())
+    body = b"".join(parts)
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Content-Length": str(len(body)),
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return _Resp(resp.status, dict(resp.headers), resp.read())
+
+
+def _get(url: str, timeout: float) -> _Resp:
+    if _HAS_REQUESTS:
+        r = _requests.get(url, timeout=timeout)
+        return _Resp(r.status_code, dict(r.headers), r.content)
+    import urllib.request
+    with urllib.request.urlopen(url, timeout=timeout) as resp:
+        return _Resp(resp.status, dict(resp.headers), resp.read())
+
+
+# ---------------------------------------------------------------------------
+# Prompt log entry — mirrors local Segmenter
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Prompt:
+    kind: str
+    coords: object = None
+    include: bool = True
+    label: str = ""
+
+
+# ---------------------------------------------------------------------------
+# RemoteSegmenter — drop-in replacement for nninteractive_segment.Segmenter
+# ---------------------------------------------------------------------------
 
 class RemoteSegmenter:
-    """Proxy for the local :class:`Segmenter` API over WebSocket.
+    """HTTP-based RemoteSegmenter that proxies to a SlicerNNInteractive server."""
 
-    Public surface intentionally mirrors :class:`nninteractive_segment.Segmenter`
-    so :func:`nninteractive_loop.run_loop` can be used unchanged.
-    """
-
-    def __init__(self, config: SegmenterConfig, ws_url: str = ""):
-        try:
-            from websocket import create_connection  # type: ignore
-        except ImportError as exc:
-            raise RemoteSegmenterError(
-                "RemoteSegmenter requires the 'websocket-client' package. "
-                "Install it with: pip install websocket-client"
-            ) from exc
-
-        import numpy as np
-        import SimpleITK as sitk
-
-        self._np = np
-        self._sitk = sitk
-
+    def __init__(self, config):
         self.config = config
         self.input_path = Path(config.input_path)
         self.output_dir = Path(config.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        self.ws_url = ws_url or DEFAULT_WS_URL
-        if not self.ws_url:
-            raise RemoteSegmenterError(
-                "No WebSocket URL configured (set NNI_REMOTE_WS)."
-            )
+        self.base_url = self._read_base_url()
+        self.timeout = float(os.environ.get("NNI_REMOTE_TIMEOUT", "300"))
+        log.info("RemoteSegmenter -> %s (timeout=%.0fs, requests=%s)",
+                 self.base_url, self.timeout, _HAS_REQUESTS)
 
-        log.info("Connecting to nnInteractive WS server: %s", self.ws_url)
-        self._ws = create_connection(
-            self.ws_url, timeout=DEFAULT_RECV_TIMEOUT_S
-        )
-
-        # ---- handshake (with optional shared-secret auth)
-        token = os.environ.get("NNI_WS_TOKEN", "").strip()
-        hello = {"op": "hello", "version": PROTOCOL_VERSION}
-        if token:
-            hello["token"] = token
-        self._send_json(hello)
-        ack = self._recv_json()
-        if ack.get("op") != "hello_ack":
-            raise RemoteSegmenterError(
-                f"Unexpected handshake reply: {ack!r}"
-            )
-        if ack.get("version") != PROTOCOL_VERSION:
-            raise RemoteSegmenterError(
-                f"Server protocol v{ack.get('version')} != "
-                f"client v{PROTOCOL_VERSION}"
-            )
-        self.remote_device = ack.get("device", "?")
-        self.remote_model = ack.get("model", "?")
-        log.info("Server ready: device=%s model=%s",
-                 self.remote_device, self.remote_model)
-
-        # ---- load the volume LOCALLY (we need its sitk geometry for
-        # rendering / saving) and ship the bytes to the server
-        log.info("Loading local volume: %s", self.input_path)
+        # ---- 1. load the volume locally so previews/labelmap keep the
+        #         original SimpleITK geometry (origin, spacing, direction).
+        log.info("Loading volume: %s", self.input_path)
         self.sitk_image = sitk.ReadImage(str(self.input_path))
-        arr = sitk.GetArrayFromImage(self.sitk_image)
+        arr = sitk.GetArrayFromImage(self.sitk_image)  # (z, y, x)
         if arr.ndim != 3:
             raise ValueError(
-                f"Expected a 3D volume; got shape {arr.shape} "
-                f"from {self.input_path}"
+                f"Expected a 3D volume; got shape {arr.shape} from {self.input_path}"
             )
         self.image_shape_zyx = tuple(arr.shape)
 
-        # The mask is what we update step-by-step; start at zero. We keep
-        # a local copy so we can render previews without round-tripping.
-        self.mask = np.zeros(self.image_shape_zyx, dtype=np.uint8)
+        # ---- 2. sanity-check the server is reachable. We probe /docs,
+        #         which FastAPI serves as 200 (Swagger UI) once the
+        #         uvicorn worker is up.
+        try:
+            docs = _get(self.base_url + "/docs", timeout=10)
+            log.info("Server probe: GET /docs -> HTTP %s", docs.status)
+            if docs.status >= 500:
+                raise RuntimeError(
+                    f"Server probe returned HTTP {docs.status}; "
+                    "is nninteractive-slicer-server bound to 0.0.0.0?"
+                )
+        except Exception as e:
+            raise RuntimeError(
+                f"Could not reach SlicerNNInteractive server at {self.base_url}: {e}\n"
+                f"  - Verify the server is running on the box (port matches the URL).\n"
+                f"  - Verify it is bound to 0.0.0.0, not 127.0.0.1, so the\n"
+                f"    Exosphere proxy can reach it."
+            ) from e
 
-        # Upload volume to server (gzip helps for sparse CT, hurts for
-        # dense volumes; default off to keep things fast).
-        compress_upload = (
-            os.environ.get("NNI_REMOTE_COMPRESS_UPLOAD", "0") == "1"
-        )
-        # We send the volume in its native dtype to avoid surprises.
-        upload_arr = arr if arr.flags["C_CONTIGUOUS"] else np.ascontiguousarray(arr)
-        upload_bytes = upload_arr.tobytes()
-        if compress_upload:
-            upload_bytes = gzip.compress(upload_bytes, compresslevel=1)
-        log.info("Uploading volume to server (%.1f MB%s) ...",
-                 len(upload_bytes) / (1024 * 1024),
-                 ", gzip" if compress_upload else "")
+        # ---- 3. upload the volume once. Server resets interactions on upload.
+        self._upload_image(arr)
 
-        self._send_json({
-            "op": "load_image",
-            "shape_zyx": list(self.image_shape_zyx),
-            "spacing_xyz": list(self.sitk_image.GetSpacing()),
-            "origin_xyz": list(self.sitk_image.GetOrigin()),
-            "direction": list(self.sitk_image.GetDirection()),
-            "dtype": str(arr.dtype),
-            "media_id": self.config.media_id,
-            "size_bytes": len(upload_bytes),
-            "compression": "gzip" if compress_upload else "none",
-        })
-        self._send_binary(upload_bytes)
-
-        loaded = self._recv_json()
-        if loaded.get("op") != "loaded":
-            raise RemoteSegmenterError(
-                f"Server failed to load volume: {loaded!r}"
-            )
-        log.info("Volume loaded on server in %.1fs",
-                 loaded.get("duration_s", 0.0))
+        # ---- 4. local mirror of the segmentation mask (server returns
+        #         the full mask after every interaction).
+        self._mask = np.zeros(self.image_shape_zyx, dtype=np.uint8)
+        self._last_step_seconds: Optional[float] = None
+        self._last_mask_bytes: Optional[int] = None
 
         self.prompts_log: list[Prompt] = []
 
     # ------------------------------------------------------------------
-    # Tiny WS helpers
+    # Misc properties to look like a local Segmenter
     # ------------------------------------------------------------------
 
-    def _send_json(self, obj: dict) -> None:
-        try:
-            self._ws.send(json.dumps(obj, separators=(",", ":")))
-        except Exception as exc:
-            raise RemoteSegmenterError(
-                f"WS send_json failed: {exc}"
-            ) from exc
+    @property
+    def device(self) -> str:
+        return f"remote ({self.base_url})"
 
-    def _send_binary(self, data: bytes) -> None:
-        try:
-            from websocket import ABNF  # type: ignore
-            self._ws.send(data, opcode=ABNF.OPCODE_BINARY)
-        except Exception as exc:
-            raise RemoteSegmenterError(
-                f"WS send_binary failed: {exc}"
-            ) from exc
+    @property
+    def model_path(self) -> str:
+        return f"remote: nnInteractive (SlicerNNInteractive @ {self.base_url})"
 
-    def _recv_json(self) -> dict:
-        try:
-            raw = self._ws.recv()
-        except Exception as exc:
-            raise RemoteSegmenterError(
-                f"WS recv_json failed: {exc}"
-            ) from exc
-        if isinstance(raw, bytes):
-            raise RemoteSegmenterError(
-                "Expected JSON text from server, got binary frame"
-            )
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise RemoteSegmenterError(
-                f"Invalid JSON from server: {raw!r}"
-            ) from exc
-        if data.get("op") == "error":
-            raise RemoteSegmenterError(
-                f"Server error: {data.get('message')} "
-                f"(context: {data.get('context')})"
-            )
-        return data
-
-    def _recv_binary(self, size: int) -> bytes:
-        # websocket-client gives us complete frames, so a single recv
-        # returns the entire binary payload sent by the server.
-        try:
-            raw = self._ws.recv()
-        except Exception as exc:
-            raise RemoteSegmenterError(
-                f"WS recv_binary failed: {exc}"
-            ) from exc
-        if not isinstance(raw, (bytes, bytearray)):
-            raise RemoteSegmenterError(
-                f"Expected binary frame of {size} bytes, got text: {raw!r:.200}"
-            )
-        if len(raw) != size:
-            raise RemoteSegmenterError(
-                f"Binary frame size mismatch: got {len(raw)} bytes, "
-                f"expected {size}"
-            )
-        return bytes(raw)
-
-    def _apply_step_reply(self, reply: dict) -> None:
-        """Read mask payload that follows a step_done envelope."""
-        np = self._np
-        size = int(reply.get("mask_size_bytes", 0))
-        if size <= 0:
-            # No mask included — leave self.mask untouched.
-            return
-        compression = reply.get("compression", "gzip")
-        payload = self._recv_binary(size)
-        if compression == "gzip":
-            payload = gzip.decompress(payload)
-        elif compression != "none":
-            raise RemoteSegmenterError(
-                f"Unknown mask compression: {compression}"
-            )
-        expected = self.mask.size  # uint8 -> 1 byte each
-        if len(payload) != expected:
-            raise RemoteSegmenterError(
-                f"Mask payload size {len(payload)} != expected {expected}"
-            )
-        new_mask = np.frombuffer(payload, dtype=np.uint8).reshape(
-            self.image_shape_zyx
+    @staticmethod
+    def _read_base_url() -> str:
+        url = (
+            os.environ.get("NNI_REMOTE_URL", "").strip()
+            or os.environ.get("NNI_REMOTE_WS", "").strip()
         )
-        # Copy so self.mask remains writable downstream.
-        self.mask = np.array(new_mask, copy=True)
+        if not url:
+            raise RuntimeError(
+                "NNI_REMOTE_URL is not set. Add it to your .env, e.g.\n"
+                "  NNI_REMOTE_URL=https://http-149-165-172-55-1527.proxy-js2-iu.exosphere.app/"
+            )
+        # Translate ws[s]://host -> http[s]://host so envs that still
+        # carry the old NNI_REMOTE_WS=wss://… keep working.
+        if url.startswith("ws://"):
+            url = "http://" + url[len("ws://"):]
+        elif url.startswith("wss://"):
+            url = "https://" + url[len("wss://"):]
+        return url.rstrip("/")
 
     # ------------------------------------------------------------------
-    # Public API — must mirror nninteractive_segment.Segmenter
+    # HTTP helpers
+    # ------------------------------------------------------------------
+
+    def _upload_image(self, arr: np.ndarray) -> None:
+        """POST /upload_image with a npy-encoded volume (server expects (z,y,x))."""
+        log.info("Uploading volume to remote (shape=%s, dtype=%s)…",
+                 arr.shape, arr.dtype)
+        buf = io.BytesIO()
+        np.save(buf, arr, allow_pickle=False)
+        payload = buf.getvalue()
+        t0 = time.time()
+        r = _post_multipart(
+            self.base_url + "/upload_image",
+            file_field="file", file_bytes=payload,
+            file_name="volume.npy", timeout=self.timeout,
+        )
+        r.raise_for_status()
+        body = r.json()
+        if body.get("status") != "ok":
+            raise RuntimeError(f"upload_image failed: {body}")
+        log.info("Volume uploaded in %.1f s (%.2f MB)",
+                 time.time() - t0, len(payload) / 1e6)
+
+    def _decode_mask(self, content: bytes) -> np.ndarray:
+        """Decode the gzipped 1-bit-per-voxel mask returned by the server."""
+        try:
+            decompressed = gzip.decompress(content)
+        except OSError:
+            # Server may already have applied Content-Encoding: gzip and
+            # the HTTP layer auto-decoded it. Treat content as raw bytes.
+            decompressed = content
+        bits = np.unpackbits(np.frombuffer(decompressed, dtype=np.uint8))
+        n = int(np.prod(self.image_shape_zyx))
+        if bits.size < n:
+            raise RuntimeError(
+                f"server returned only {bits.size} bits, expected at least {n}"
+            )
+        mask = bits[:n].reshape(self.image_shape_zyx).astype(np.uint8)
+        self._last_mask_bytes = len(content)
+        return mask
+
+    @staticmethod
+    def _is_json_error(headers: dict, content: bytes) -> Optional[dict]:
+        ctype = (headers.get("Content-Type") or headers.get("content-type") or "")
+        if "application/json" not in ctype.lower():
+            return None
+        try:
+            body = json.loads(content.decode("utf-8"))
+        except Exception:
+            return None
+        if isinstance(body, dict) and body.get("status") == "error":
+            return body
+        return None
+
+    # ------------------------------------------------------------------
+    # Prompt API (mirrors local Segmenter)
+    # ------------------------------------------------------------------
+
+    def add_point(self, x: int, y: int, z: int, *, positive: bool = True,
+                  label: str = "") -> None:
+        log.info("[remote] add_point(x=%d, y=%d, z=%d, positive=%s)",
+                 x, y, z, positive)
+        t0 = time.time()
+        r = _post_json(
+            self.base_url + "/add_point_interaction",
+            {"voxel_coord": [int(x), int(y), int(z)],
+             "positive_click": bool(positive)},
+            timeout=self.timeout,
+        )
+        r.raise_for_status()
+        err = self._is_json_error(r.headers, r.content)
+        if err:
+            raise RuntimeError(f"server error on add_point: {err.get('message')}")
+        self._mask = self._decode_mask(r.content)
+        self._last_step_seconds = time.time() - t0
+        self.prompts_log.append(
+            Prompt(kind="point", coords=(int(x), int(y), int(z)),
+                   include=bool(positive), label=label)
+        )
+        log.info("[remote] mask voxel_count=%d  (step %.1fs, payload %.1f kB)",
+                 int((self._mask > 0).sum()),
+                 self._last_step_seconds,
+                 (self._last_mask_bytes or 0) / 1024)
+
+    def add_bbox(self, x_range: Iterable[int], y_range: Iterable[int],
+                 z_range: Iterable[int], *, positive: bool = True,
+                 label: str = "") -> None:
+        x0, x1 = int(x_range[0]), int(x_range[1])
+        y0, y1 = int(y_range[0]), int(y_range[1])
+        z0, z1 = int(z_range[0]), int(z_range[1])
+        log.info("[remote] add_bbox(x=[%d,%d] y=[%d,%d] z=[%d,%d], positive=%s)",
+                 x0, x1, y0, y1, z0, z1, positive)
+        t0 = time.time()
+        r = _post_json(
+            self.base_url + "/add_bbox_interaction",
+            {"outer_point_one": [x0, y0, z0],
+             "outer_point_two": [x1, y1, z1],
+             "positive_click": bool(positive)},
+            timeout=self.timeout,
+        )
+        r.raise_for_status()
+        err = self._is_json_error(r.headers, r.content)
+        if err:
+            raise RuntimeError(f"server error on add_bbox: {err.get('message')}")
+        self._mask = self._decode_mask(r.content)
+        self._last_step_seconds = time.time() - t0
+        self.prompts_log.append(
+            Prompt(kind="bbox",
+                   coords=[[x0, x1], [y0, y1], [z0, z1]],
+                   include=bool(positive), label=label)
+        )
+        log.info("[remote] mask voxel_count=%d  (step %.1fs, payload %.1f kB)",
+                 int((self._mask > 0).sum()),
+                 self._last_step_seconds,
+                 (self._last_mask_bytes or 0) / 1024)
+
+    def reset_segment(self) -> None:
+        """Reset by uploading an all-zeros mask via /upload_segment.
+
+        SlicerNNInteractive's PromptManager.set_segment() resets
+        interactions when given an all-zero mask, which is the documented
+        way to start over without re-uploading the volume.
+        """
+        log.info("[remote] reset_segment")
+        empty = np.zeros(self.image_shape_zyx, dtype=np.uint8)
+        buf = io.BytesIO()
+        np.save(buf, empty, allow_pickle=False)
+        compressed = gzip.compress(buf.getvalue())
+        r = _post_multipart(
+            self.base_url + "/upload_segment",
+            file_field="file", file_bytes=compressed,
+            file_name="seg.npy.gz", timeout=self.timeout,
+        )
+        r.raise_for_status()
+        self._mask[:] = 0
+        self.prompts_log.append(Prompt(kind="reset"))
+
+    # ------------------------------------------------------------------
+    # Result accessors (mirrors local Segmenter)
     # ------------------------------------------------------------------
 
     @property
-    def device(self):  # backward-compat: callers may print this
-        return f"remote:{self.remote_device}"
-
-    @property
-    def model_path(self):
-        return f"remote:{self.remote_model}"
-
-    @property
-    def mask_array(self):
-        return self.mask
+    def mask_array(self) -> np.ndarray:
+        return self._mask
 
     def voxel_count(self) -> int:
-        return int((self.mask > 0).sum())
+        return int((self._mask > 0).sum())
 
     def volume_mm3(self) -> float:
-        spacing = self.sitk_image.GetSpacing()
-        return self.voxel_count() * float(spacing[0] * spacing[1] * spacing[2])
+        spacing = self.sitk_image.GetSpacing()  # (sx, sy, sz)
+        voxel_vol = float(spacing[0] * spacing[1] * spacing[2])
+        return self.voxel_count() * voxel_vol
 
     def bounding_box(self) -> Optional[dict]:
-        np = self._np
-        if self.mask.sum() == 0:
+        if self._mask.sum() == 0:
             return None
-        zs, ys, xs = np.where(self.mask > 0)
+        zs, ys, xs = np.where(self._mask > 0)
         return {
             "x": [int(xs.min()), int(xs.max())],
             "y": [int(ys.min()), int(ys.max())],
             "z": [int(zs.min()), int(zs.max())],
         }
 
-    def add_point(self, x: int, y: int, z: int, *,
-                  positive: bool = True, label: str = "") -> None:
-        self._send_json({
-            "op": "add_point",
-            "x": int(x), "y": int(y), "z": int(z),
-            "positive": bool(positive),
-            "label": str(label or ""),
-        })
-        reply = self._recv_json()
-        if reply.get("op") != "step_done":
-            raise RemoteSegmenterError(
-                f"add_point: unexpected reply {reply!r}"
-            )
-        self._apply_step_reply(reply)
-        self.prompts_log.append(Prompt(
-            kind="point", coords=(int(x), int(y), int(z)),
-            include=bool(positive), label=label,
-        ))
-
-    def add_bbox(self, x_range: Iterable[int], y_range: Iterable[int],
-                 z_range: Iterable[int], *,
-                 positive: bool = True, label: str = "") -> None:
-        bbox = [
-            [int(x_range[0]), int(x_range[1])],
-            [int(y_range[0]), int(y_range[1])],
-            [int(z_range[0]), int(z_range[1])],
-        ]
-        self._send_json({
-            "op": "add_bbox",
-            "x": bbox[0], "y": bbox[1], "z": bbox[2],
-            "positive": bool(positive),
-            "label": str(label or ""),
-        })
-        reply = self._recv_json()
-        if reply.get("op") != "step_done":
-            raise RemoteSegmenterError(
-                f"add_bbox: unexpected reply {reply!r}"
-            )
-        self._apply_step_reply(reply)
-        self.prompts_log.append(Prompt(
-            kind="bbox", coords=bbox, include=bool(positive), label=label,
-        ))
-
-    def reset_segment(self) -> None:
-        self._send_json({"op": "reset"})
-        reply = self._recv_json()
-        if reply.get("op") != "step_done":
-            raise RemoteSegmenterError(
-                f"reset: unexpected reply {reply!r}"
-            )
-        self._apply_step_reply(reply)
-        # Belt-and-braces: server sends an all-zero mask after reset, but
-        # if compression=none and size=0 was sent we manually zero locally.
-        self.mask.fill(0)
-        self.prompts_log.append(Prompt(kind="reset"))
-
     # ------------------------------------------------------------------
-    # Persistence — same files as the local Segmenter, written locally
-    # using the SimpleITK geometry of the loaded volume.
+    # Persistence — performed locally so we keep the original geometry
     # ------------------------------------------------------------------
 
     def save_labelmap(self, name: str = "") -> str:
-        sitk = self._sitk
-        np = self._np
-
         out_name = name or f"{self.config.media_id}_nni_labelmap.nii.gz"
         out_path = self.output_dir / out_name
-        mask = self.mask.astype(np.uint8)
-
-        seg_image = sitk.GetImageFromArray(mask)
+        seg_image = sitk.GetImageFromArray(self._mask.astype(np.uint8))
         seg_image.CopyInformation(self.sitk_image)
         sitk.WriteImage(seg_image, str(out_path), useCompression=True)
         log.info("Wrote labelmap: %s (%d voxels, %.2f mm^3)",
@@ -418,7 +451,6 @@ class RemoteSegmenter:
         return str(out_path)
 
     def save_orthogonal_previews(self, name_prefix: str = "") -> list[str]:
-        np = self._np
         try:
             import matplotlib  # noqa: F401
             matplotlib.use("Agg")
@@ -427,9 +459,8 @@ class RemoteSegmenter:
             log.warning("matplotlib not installed; skipping preview screenshots")
             return []
 
-        sitk = self._sitk
-        arr = sitk.GetArrayFromImage(self.sitk_image)
-        mask = self.mask
+        arr = sitk.GetArrayFromImage(self.sitk_image)  # (z, y, x)
+        mask = self._mask
         prefix = name_prefix or f"{self.config.media_id}_nni"
 
         def _best_slice(axis: int) -> int:
@@ -447,99 +478,50 @@ class RemoteSegmenter:
         for view_name, axis, slicer in views:
             s = _best_slice(axis)
             img_slice, mask_slice = slicer(arr, s)
-
             fig, ax = plt.subplots(figsize=(6, 6))
             ax.imshow(img_slice, cmap="gray", origin="lower")
             if mask_slice.sum() > 0:
                 overlay = np.ma.masked_where(mask_slice == 0, mask_slice)
-                ax.imshow(overlay, cmap="autumn", alpha=0.45, origin="lower")
-            ax.set_title(f"{view_name} (slice {s}) — {self.config.media_id}")
-            ax.set_axis_off()
+                ax.imshow(overlay, cmap="autumn", origin="lower",
+                          alpha=0.45, vmin=0, vmax=1)
+            ax.set_title(f"{prefix} {view_name} idx={s}")
+            ax.axis("off")
             out_path = self.output_dir / f"{prefix}_{view_name}.png"
-            fig.tight_layout()
-            fig.savefig(out_path, dpi=120, bbox_inches="tight")
+            fig.savefig(str(out_path), dpi=120, bbox_inches="tight")
             plt.close(fig)
             previews.append(str(out_path))
         return previews
 
     def export_summary(self, extra: Optional[dict] = None) -> str:
+        out_path = self.output_dir / f"{self.config.media_id}_nni_summary.json"
         summary = {
             "media_id": self.config.media_id,
             "input_path": str(self.input_path),
-            "model_path": str(self.model_path),
-            "device": str(self.device),
+            "output_dir": str(self.output_dir),
+            "remote_url": self.base_url,
             "image_shape_zyx": list(self.image_shape_zyx),
-            "voxel_spacing_xyz": list(self.sitk_image.GetSpacing()),
-            "n_prompts": len(self.prompts_log),
-            "prompts": [p.to_dict() for p in self.prompts_log],
             "voxel_count": self.voxel_count(),
             "volume_mm3": round(self.volume_mm3(), 3),
             "bounding_box_voxels": self.bounding_box(),
-            "remote_url": self.ws_url,
+            "prompts": [
+                {"kind": p.kind, "coords": p.coords,
+                 "include": p.include, "label": p.label}
+                for p in self.prompts_log
+            ],
+            "last_step_seconds": self._last_step_seconds,
         }
         if extra:
             summary.update(extra)
-        out_path = self.output_dir / f"{self.config.media_id}_nni_summary.json"
         out_path.write_text(json.dumps(summary, indent=2, default=str))
+        log.info("Wrote summary: %s", out_path)
         return str(out_path)
 
-    # ------------------------------------------------------------------
-    # Cleanup
-    # ------------------------------------------------------------------
-
     def close(self) -> None:
-        try:
-            self._send_json({"op": "close"})
-        except Exception:
-            pass
-        try:
-            self._ws.close()
-        except Exception:
-            pass
-
-    def __del__(self):
-        try:
-            self.close()
-        except Exception:
-            pass
+        # No persistent connection; nothing to clean up.
+        pass
 
 
-# ---------------------------------------------------------------------------
-# Tiny CLI: ping the server, print info
-# ---------------------------------------------------------------------------
-
-
-def _ping(url: str) -> int:
-    from websocket import create_connection  # type: ignore
-    ws = create_connection(url, timeout=10)
-    try:
-        ws.send(json.dumps({"op": "hello", "version": PROTOCOL_VERSION}))
-        ack = json.loads(ws.recv())
-        ws.send(json.dumps({"op": "info"}))
-        info = json.loads(ws.recv())
-        ws.send(json.dumps({"op": "ping"}))
-        pong = json.loads(ws.recv())
-        ws.send(json.dumps({"op": "close"}))
-    finally:
-        try:
-            ws.close()
-        except Exception:
-            pass
-    print(json.dumps({"ack": ack, "info": info, "pong": pong},
-                     indent=2, default=str))
-    return 0
-
-
-def main() -> int:
-    import argparse
-    p = argparse.ArgumentParser(description="Ping/inspect a remote nnInteractive WS server")
-    p.add_argument("--url", default=DEFAULT_WS_URL)
-    p.add_argument("--log-level", default="INFO")
-    args = p.parse_args()
-    logging.basicConfig(level=args.log_level.upper(),
-                        format="%(asctime)s [%(levelname)s] %(name)s — %(message)s")
-    return _ping(args.url)
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+# Backwards-compat aliases for callers that imported the old WS-based
+# RemoteSegmenter or used the make_remote_segmenter() factory name.
+def make_remote_segmenter(config) -> RemoteSegmenter:  # pragma: no cover
+    return RemoteSegmenter(config)
