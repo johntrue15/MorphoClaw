@@ -10,7 +10,28 @@ new MkDocs documentation site &mdash; including the live knowledge graph
 &mdash; online. The actual content changes are committed; the steps below
 only have to happen once, on this repository's GitHub settings.
 
-## 1. Switch the GitHub Pages source
+!!! warning "Required first step: switch the Pages source"
+    Until you flip **Settings → Pages → Source** from *Deploy from a branch*
+    to **GitHub Actions**, GitHub's default Jekyll builder
+    (`actions/jekyll-build-pages`) will continue to run on every push.
+
+    A transitional [`_config.yml`](https://github.com/johntrue15/Metadata-to-Morphsource-compare/blob/main/_config.yml)
+    is committed at the repo root that tells Jekyll to **skip** everything in
+    `docs/`, `mkdocs.yml`, `requirements*.txt`, `metadata_to_morphsource/`,
+    and friends, so the legacy Jekyll build no longer chokes on MkDocs Jinja
+    macros (`{% set %}`, `{{ kg_stats() }}`). Without it, you would see:
+
+    ```
+    Liquid Exception: Liquid syntax error (line 34): Unknown tag 'set' in docs/index.md
+    ```
+
+    A `.nojekyll` file at the repo root is also committed so the output (once
+    Pages serves it) is not post-processed by Jekyll. But neither file stops
+    the Jekyll *build* action from being auto-triggered &mdash; only flipping
+    the Pages source to **GitHub Actions** does that. Both shims become no-ops
+    after the switch.
+
+## 1. Switch the GitHub Pages source (REQUIRED)
 
 The repository was previously served from **Deploy from a branch → `main` /docs**
 (the legacy `docs/index.html` query form). The new docs site is built by
@@ -76,6 +97,7 @@ real data.
 | `docs/index.html` | Moved verbatim to `docs/query.html` for backward compatibility |
 | `README.md` | Trimmed to a short overview with prominent docs-site links |
 | `.gitignore` | Adds `site/` (MkDocs build output) |
+| `.nojekyll`, `_config.yml` (root) | Transitional shims to keep the legacy Jekyll Pages builder from failing while the maintainer switches the Pages source. No-ops after the switch. |
 
 No application code (`research_agent.py`, `metadata_to_morphsource/**`,
 `knowledge_graph.py`, the integrity verifier, the seg-train trainer, the

@@ -1,6 +1,6 @@
 {
   "local": {
-    "captured_utc": "2026-05-18T17:19:30.833688+00:00",
+    "captured_utc": "2026-05-18T17:28:18.916114+00:00",
     "host": "M4s-Mac-mini.local",
     "user": "m4macmini",
     "platform": "macOS-15.7.3-arm64-arm-64bit",
@@ -19,7 +19,7 @@
       "--max-candidates",
       "50000",
       "--max-steps",
-      "5",
+      "3",
       "--min-delta",
       "200",
       "--patience",
@@ -32,7 +32,7 @@
       "runs/impc_telem"
     ],
     "git_repo_root": "/Users/m4macmini/Documents/GitHub/Metadata-to-Morphsource-compare",
-    "git_commit": "9bad224b6c47bac11281dc9ad7c6cac84dc32ae6",
+    "git_commit": "81727b628ab5fe973f54024ebda092a0505d60f1",
     "git_branch": "main",
     "git_dirty": true,
     "git_remote": "https://github.com/johntrue15/MorphoClaw.git",
@@ -53,7 +53,7 @@
     }
   },
   "remote": {
-    "captured_utc": "2026-05-18T17:19:31.710334Z",
+    "captured_utc": "2026-05-18T17:28:19.855805Z",
     "host": "instance-579",
     "platform": "Linux-6.8.0-117-generic-x86_64-with-glibc2.35",
     "machine": "x86_64",
@@ -67,11 +67,33 @@
     "fastapi/info_err": "<HTTPError 404: 'Not Found'>",
     "fastapi/version_err": "<HTTPError 404: 'Not Found'>",
     "fastapi/health_err": "<HTTPError 404: 'Not Found'>",
-    "fastapi/_err": "<HTTPError 404: 'Not Found'>",
+    "fastapi/openapi.json_status": 200,
+    "fastapi/openapi.json_body": "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"FastAPI\",\"version\":\"0.1.0\"},\"paths\":{\"/upload_image\":{\"post\":{\"summary\":\"Upload Image\",\"description\":\"Receive a npy file from the client and set it as the main image in PromptManager.\",\"operationId\":\"upload_image_upload_image_post\",\"requestBody\":{\"content\":{\"multipart/form-data\":{\"schema\":{\"$ref\":\"#/components/schemas/Body_upload_image_upload_image_post\"}}}},\"responses\":{\"200\":{\"description\":\"Successful Response\",\"content\":{\"application/json\":{\"schema\":{}}}},\"422\":{\"description\":\"Validation Error\",\"content\":{\"application/json\":{\"schema\":{\"$ref\":\"#/components/schemas/HTTPValidationError\"}}}}}}},\"/upload_segment\":{\"post\":{\"summary\":\"Upload Segment\",\"description\":\"Receive a gzipped npy file from the client and set it as the segmentation in PromptManager.\",\"operationId\":\"upload_segment_upload_segment_post\",\"requestBody\":{\"content\":{\"multipart/form-data\":{\"schema\":{\"$ref\":\"#/components/schemas/Body_upload_segment_upload_segment_post\"}}}},\"responses\":{\"200\":{\"description\":\"Successful Response\",\"content\":{\"application/json\":{\"schema\":{}}}},\"422\":{\"description\":\"Validation Error\",\"content\":{\"application/json\":{\"schema\":{\"$ref\":\"#/components/schemas/HTTPValidationError\"}}}}}}},\"/add_point_interaction\":{\"post\":{\"summary\":\"Add Point Interaction\",\"description\":\"Receives a point (voxel_coord) + positive/negative. Updates the model & returns a binary mask.\",\"operationId\":\"add_point_interaction_add_point_interaction_post\",\"requestBody\":{\"content\":{\"application/json\":{\"schema\":{\"$ref\":\"#/components/schemas/PointParams\"}}},\"required\":true},\"responses\":{\"200\":{\"description\":\"Successful Response\",\"content\":{\"application/json\":{\"schema\":{}}}},\"422\":{\"description\":\"Validation Error\",\"content\":{\"application/json\":{\"schema\":{\"$ref\":\"#/components/schemas/HTTPValidationError\"}}}}}}},\"/add_bbox_interaction\":{\"post\":{\"summary\":\"Add Bbox Interaction\",\"description\":\"Receives bounding box corners + positive/negative. Updates model & returns a mask.\",\"operationId\":\"add_bbox_interaction_add_bbox_interaction_post\",\"requestBody\":{\"content\":{\"application/json\":{\"schema\":{\"$ref\":\"#/components/schemas/BBoxParams\"}}},\"required\":true},\"responses\":{\"200\":{\"description\":\"Successful Response\",\"content\":{\"application/json\":{\"schema\":{}}}},\"422\":{\"description\":\"Validation Error\",\"content\":{\"application/json\":{\"schema\":{\"$ref\":\"#/components/schemas/HTTPValidationError\"}}}}}}},\"/add_lasso_interaction\":{\"post\":{\"summary\":\"Add Lasso Interaction\",\"description\":\"Receives a gzipped npy mask + positive/negative. Treated as a 'lasso' 3D mask.\",\"operationId\":\"add_lasso_interaction_add_lasso_interaction_post\",\"requestBody\":{\"content\":{\"multipart/form-data\":{\"schema\":{\"$ref\":\"#/components/schemas/Body_add_lasso_interaction_add_lasso_interaction_post\"}}},\"required\":true},\"responses\":{\"200\":{\"description\":\"Successful Response\",\"content\":{\"application/json\":{\"schema\":{}}}},\"422\":{\"description\":\"Validation Error\",\"content\":{\"application/json\":{\"schema\":{\"$ref\":\"#/components/schemas/HTTPValidationError\"}}}}}}},\"/add_scribble_interaction\":{\"post\":{\"summary\":\"Add Scribble Interaction\",\"description\":\"Receives a scribble mask + positive/negative. Updates model, returns updated segmentation.\",\"operationId\":\"add_scribble_interaction_add_scribble_interaction_post\",\"requestBody\":{\"content\":{\"multipart/form-data\":{\"schema\":{\"$ref\":\"#/components/schemas/Body_add_scribble_interaction_add_scribble_interaction_post\"}}},\"required\":true},\"responses\":{\"200\":{\"description\":\"Successful Response\",\"content\":{\"application/json\":{\"schema\":{}}}},\"422\":{\"description\":\"Validation Error\",\"content\":{\"application/json\":{\"schema\":{\"$ref\":\"#/components/schemas/HTTPValidationError\"}}}}}}}},\"components\":{\"schemas\":{\"BBoxParams\":{\"properties\":{\"outer_point_one\":{\"items\":{\"type\":\"integer\"},\"type\":\"array\",\"title\":\"Outer Point One\"},\"outer_point_two\":{\"items\":{\"type\":\"integer\"},\"type\":\"array\",\"title\":\"Outer Point Two\"},\"positive_click\":{\"type\":\"boolean\",\"title\":\"Positive Click\"}},\"type\"",
+    "fastapi_port": 1527,
+    "fastapi_pid_via": "ss",
+    "fastapi_pid": 5161,
+    "fastapi_cmdline": [
+      "/media/volume/MyData/nninteractive/bin/python",
+      "/media/volume/MyData/nninteractive/bin/nninteractive-slicer-server",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "1527"
+    ],
+    "fastapi_exe": "/usr/bin/python3.10",
+    "fastapi_environ": {
+      "VIRTUAL_ENV": "/media/volume/MyData/nninteractive",
+      "PATH": "/media/volume/MyData/nninteractive/bin:/software/u22/xalt/3.0.1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/opt/TurboVNC/bin/",
+      "PYTHONPATH": "/software/u22/xalt/3.0.1/site_packages"
+    },
+    "fastapi_py_bin": "/media/volume/MyData/nninteractive/bin/python",
+    "fastapi_python_err": "CalledProcessError(1, ['/media/volume/MyData/nninteractive/bin/python', '-c', 'import sys, platform; print(sys.version.split()[0]); print(sys.executable); print(platform.platform())'])",
+    "fastapi_packages_err": "CalledProcessError(1, ['/media/volume/MyData/nninteractive/bin/python', '/tmp/bs_probe_b76_y3gv.py'])",
+    "fastapi_pip_freeze_err": "CalledProcessError(1, ['/media/volume/MyData/nninteractive/bin/python', '-m', 'pip', 'freeze'])",
     "nninteractive_err": "ModuleNotFoundError(\"No module named 'nnInteractive'\")",
     "torch_err": "ModuleNotFoundError(\"No module named 'torch'\")",
     "psutil_err": "ModuleNotFoundError(\"No module named 'psutil'\")",
     "status": "ok",
-    "_dt_s": 0.48
+    "_dt_s": 0.645
   }
 }

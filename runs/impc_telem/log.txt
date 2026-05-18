@@ -1,56 +1,48 @@
-[2026-05-18T17:19:30.833588+00:00] === Slicer remote bright-spot greedy segmentation ===
-[2026-05-18T17:19:30.833603+00:00] server       : https://http-149-165-152-225-2016.proxy-js2-iu.exosphere.app
-[2026-05-18T17:19:30.833608+00:00] run id       : 20260518T171930Z_mouse_skull_b694af
-[2026-05-18T17:19:30.833613+00:00] out          : runs/impc_telem
-[2026-05-18T17:19:30.833617+00:00] percentile   : 99.5
-[2026-05-18T17:19:30.833621+00:00] max steps    : 5
-[2026-05-18T17:19:30.833625+00:00] min delta    : 200  (patience=3)
+[2026-05-18T17:28:18.915832+00:00] === Slicer remote bright-spot greedy segmentation ===
+[2026-05-18T17:28:18.915871+00:00] server       : https://http-149-165-152-225-2016.proxy-js2-iu.exosphere.app
+[2026-05-18T17:28:18.915884+00:00] run id       : 20260518T172818Z_mouse_skull_d534f1
+[2026-05-18T17:28:18.915896+00:00] out          : runs/impc_telem
+[2026-05-18T17:28:18.915908+00:00] percentile   : 99.5
+[2026-05-18T17:28:18.915918+00:00] max steps    : 3
+[2026-05-18T17:28:18.915928+00:00] min delta    : 200  (patience=3)
 
-[2026-05-18T17:19:31.180444+00:00] git commit   : 9bad224b6c47bac11281dc9ad7c6cac84dc32ae6  dirty=True
-[2026-05-18T17:19:31.180455+00:00] WARNING: working tree is dirty; the recorded git_commit may not match the script that's running.
-[2026-05-18T17:19:31.180460+00:00] -> Capturing remote environment (Slicer/plugin/torch)…
-[2026-05-18T17:19:31.661833+00:00]    slicer       : 5.10.0
-[2026-05-18T17:19:31.661904+00:00]    torch        : None  cuda=None  mps=None
-[2026-05-18T17:19:31.661928+00:00]    nnInteractive: None
-[2026-05-18T17:19:31.661946+00:00] -> Setting active volume to 'IMPC_sample_data'
-[2026-05-18T17:19:31.940332+00:00]    id=vtkMRMLScalarVolumeNode1  dims=[259, 258, 421]  spacing=[1.0, 1.0, 1.0]
-[2026-05-18T17:19:31.940355+00:00] -> Hashing active volume…
-[2026-05-18T17:19:32.246614+00:00]    sha256(voxels) = e9a958890f652976…  shape=[421, 258, 259]  dtype=uint8
-[2026-05-18T17:19:32.246633+00:00] -> Resetting segmentation (server + scene)…
-[2026-05-18T17:19:33.014475+00:00]    ok  cleared=['Segmentation']
-[2026-05-18T17:19:33.014724+00:00] -> Enabling segmentation visibility (2D + 3D)…
-[2026-05-18T17:19:33.266978+00:00]    ok  nodes=['Segmentation', 'ScribbleSegmentNode (do not touch)']
-[2026-05-18T17:19:33.267340+00:00] -> Building bright-pixel candidate list…
-[2026-05-18T17:19:33.829236+00:00]    volume       : IMPC_sample_data  shape(k,j,i)=[421, 258, 259]
-[2026-05-18T17:19:33.829386+00:00]    threshold    : 125.00  (uint8)
-[2026-05-18T17:19:33.829450+00:00]    candidates   : 50,000  intensities=[163.0, 255.0]
-[2026-05-18T17:19:33.829474+00:00]    total voxels : 28,132,062
-[2026-05-18T17:19:33.830581+00:00] --- Step 00 -----------------------------------------
-[2026-05-18T17:19:35.014750+00:00]   picked ijk=[161, 93, 147]  intensity=255.0  same-seg  segments=1  skipped_inside=0  candidates_left=49,999
-[2026-05-18T17:19:35.014794+00:00]   voxels          0 ->     23,814  delta=+23,814  this segment: Segment_1 = 23,814 vox  (0.762s remote, 1.184s round-trip)
-[2026-05-18T17:19:36.485806+00:00] --- Step 01 -----------------------------------------
-[2026-05-18T17:19:38.159426+00:00]   picked ijk=[109, 89, 159]  intensity=226.0  new-seg  segments=2  skipped_inside=107  candidates_left=49,891
-[2026-05-18T17:19:38.159542+00:00]   voxels     23,814 ->     60,971  delta=+37,157  this segment: Segment_2 = 37,157 vox  (0.971s remote, 1.674s round-trip)
-[2026-05-18T17:19:39.601980+00:00] --- Step 02 -----------------------------------------
-[2026-05-18T17:19:41.523635+00:00]   picked ijk=[156, 110, 168]  intensity=218.0  new-seg  segments=3  skipped_inside=466  candidates_left=49,424
-[2026-05-18T17:19:41.523737+00:00]   voxels     60,971 ->    151,835  delta=+90,864  this segment: Segment_3 = 148,653 vox  (1.034s remote, 1.921s round-trip)
-[2026-05-18T17:19:42.959465+00:00] --- Step 03 -----------------------------------------
-[2026-05-18T17:19:45.153066+00:00]   picked ijk=[164, 152, 278]  intensity=185.0  new-seg  segments=4  skipped_inside=15410  candidates_left=34,013
-[2026-05-18T17:19:45.153127+00:00]   voxels    151,835 ->    155,109  delta=+3,274  this segment: Segment_4 = 3,274 vox  (1.056s remote, 2.193s round-trip)
-[2026-05-18T17:19:46.564639+00:00] --- Step 04 -----------------------------------------
-[2026-05-18T17:19:48.977230+00:00]   picked ijk=[150, 106, 202]  intensity=183.0  new-seg  segments=5  skipped_inside=1766  candidates_left=32,246
-[2026-05-18T17:19:48.977302+00:00]   voxels    155,109 ->    155,816  delta=+707  this segment: Segment_5 = 707 vox  (1.069s remote, 2.412s round-trip)
-[2026-05-18T17:19:50.445222+00:00] -> Exporting final segmentation as NIfTI artifacts…
-[2026-05-18T17:19:54.160445+00:00]   composite     : artifacts/composite.nii.gz  19,666 bytes  sha256=c7043374a19c01b4…
-[2026-05-18T17:19:54.161010+00:00]   segment      Segment_1:    58,045 bytes  sha256=7bbe9ff625d7…
-[2026-05-18T17:19:54.161434+00:00]   segment      Segment_2:    59,782 bytes  sha256=5a62d5574f61…
-[2026-05-18T17:19:54.161980+00:00]   segment      Segment_3:    71,755 bytes  sha256=71851be0c4a6…
-[2026-05-18T17:19:54.163100+00:00]   segment      Segment_4:    55,544 bytes  sha256=d8de1dc88ea5…
-[2026-05-18T17:19:54.164126+00:00]   segment      Segment_5:    55,219 bytes  sha256=87cb71657aa0…
+[2026-05-18T17:28:19.316557+00:00] git commit   : 81727b628ab5fe973f54024ebda092a0505d60f1  dirty=True
+[2026-05-18T17:28:19.316571+00:00] WARNING: working tree is dirty; the recorded git_commit may not match the script that's running.
+[2026-05-18T17:28:19.316576+00:00] -> Capturing remote environment (Slicer/plugin/torch)…
+[2026-05-18T17:28:19.962266+00:00]    slicer       : 5.10.0
+[2026-05-18T17:28:19.962280+00:00]    torch        : None  cuda=None  mps=None
+[2026-05-18T17:28:19.962288+00:00]    nnInteractive: None
+[2026-05-18T17:28:19.962295+00:00] -> Setting active volume to 'IMPC_sample_data'
+[2026-05-18T17:28:20.217576+00:00]    id=vtkMRMLScalarVolumeNode1  dims=[259, 258, 421]  spacing=[1.0, 1.0, 1.0]
+[2026-05-18T17:28:20.217589+00:00] -> Hashing active volume…
+[2026-05-18T17:28:20.522831+00:00]    sha256(voxels) = e9a958890f652976…  shape=[421, 258, 259]  dtype=uint8
+[2026-05-18T17:28:20.522846+00:00] -> Resetting segmentation (server + scene)…
+[2026-05-18T17:28:21.258721+00:00]    ok  cleared=['Segmentation']
+[2026-05-18T17:28:21.259173+00:00] -> Enabling segmentation visibility (2D + 3D)…
+[2026-05-18T17:28:21.530252+00:00]    ok  nodes=['Segmentation', 'ScribbleSegmentNode (do not touch)']
+[2026-05-18T17:28:21.530523+00:00] -> Building bright-pixel candidate list…
+[2026-05-18T17:28:22.083560+00:00]    volume       : IMPC_sample_data  shape(k,j,i)=[421, 258, 259]
+[2026-05-18T17:28:22.083620+00:00]    threshold    : 125.00  (uint8)
+[2026-05-18T17:28:22.083631+00:00]    candidates   : 50,000  intensities=[163.0, 255.0]
+[2026-05-18T17:28:22.083639+00:00]    total voxels : 28,132,062
+[2026-05-18T17:28:22.084024+00:00] --- Step 00 -----------------------------------------
+[2026-05-18T17:28:23.264365+00:00]   picked ijk=[161, 93, 147]  intensity=255.0  same-seg  segments=1  skipped_inside=0  candidates_left=49,999
+[2026-05-18T17:28:23.264426+00:00]   voxels          0 ->     23,814  delta=+23,814  this segment: Segment_1 = 23,814 vox  (0.763s remote, 1.18s round-trip)
+[2026-05-18T17:28:24.678124+00:00] --- Step 01 -----------------------------------------
+[2026-05-18T17:28:26.362949+00:00]   picked ijk=[109, 89, 159]  intensity=226.0  new-seg  segments=2  skipped_inside=107  candidates_left=49,891
+[2026-05-18T17:28:26.363015+00:00]   voxels     23,814 ->     60,971  delta=+37,157  this segment: Segment_2 = 37,157 vox  (0.986s remote, 1.685s round-trip)
+[2026-05-18T17:28:27.757704+00:00] --- Step 02 -----------------------------------------
+[2026-05-18T17:28:29.685455+00:00]   picked ijk=[156, 110, 168]  intensity=218.0  new-seg  segments=3  skipped_inside=466  candidates_left=49,424
+[2026-05-18T17:28:29.685515+00:00]   voxels     60,971 ->    151,835  delta=+90,864  this segment: Segment_3 = 148,653 vox  (1.031s remote, 1.928s round-trip)
+[2026-05-18T17:28:31.067405+00:00] -> Exporting final segmentation as NIfTI artifacts…
+[2026-05-18T17:28:33.452773+00:00]   composite     : artifacts/composite.nii.gz  16,285 bytes  sha256=5b91c1ff80262a57…
+[2026-05-18T17:28:33.453388+00:00]   segment      Segment_1:    58,045 bytes  sha256=7bbe9ff625d7…
+[2026-05-18T17:28:33.454148+00:00]   segment      Segment_2:    59,782 bytes  sha256=5a62d5574f61…
+[2026-05-18T17:28:33.454754+00:00]   segment      Segment_3:    71,755 bytes  sha256=71851be0c4a6…
 
-[2026-05-18T17:19:54.166085+00:00] DONE. final voxels = 155,816 / 28,132,062 (0.55%)
-[2026-05-18T17:19:54.166098+00:00]       stop reason = {'reason': 'max_steps', 'max_steps': 5}
-[2026-05-18T17:19:54.166115+00:00]       summary    -> runs/impc_telem/summary.json
-[2026-05-18T17:19:54.166124+00:00]       events     -> runs/impc_telem/events.jsonl
-[2026-05-18T17:19:54.166132+00:00]       artifacts  -> runs/impc_telem/artifacts
-[2026-05-18T17:19:54.166141+00:00]       replay     -> runs/impc_telem/replay.sh
+[2026-05-18T17:28:33.455835+00:00] DONE. final voxels = 151,835 / 28,132,062 (0.54%)
+[2026-05-18T17:28:33.455848+00:00]       stop reason = {'reason': 'max_steps', 'max_steps': 3}
+[2026-05-18T17:28:33.455861+00:00]       summary    -> runs/impc_telem/summary.json
+[2026-05-18T17:28:33.455875+00:00]       events     -> runs/impc_telem/events.jsonl
+[2026-05-18T17:28:33.455879+00:00]       artifacts  -> runs/impc_telem/artifacts
+[2026-05-18T17:28:33.455884+00:00]       replay     -> runs/impc_telem/replay.sh

@@ -13,13 +13,13 @@
   "click_positive": true,
   "skipped_inside": 107,
   "candidates_left": 49891,
-  "click_seconds": 0.971,
+  "click_seconds": 0.986,
   "made_new_segment": true,
   "segment_id": "Segment_2",
   "segment_voxels": 37157,
   "n_segments_before": 1,
   "n_segments_after": 2,
-  "_dt_s": 1.673,
+  "_dt_s": 1.685,
   "step": 1,
-  "step_wallclock_s": 1.674
+  "step_wallclock_s": 1.685
 }

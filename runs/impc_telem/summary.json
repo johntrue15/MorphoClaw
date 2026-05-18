@@ -1,5 +1,5 @@
 {
-  "run_id": "20260518T171930Z_mouse_skull_b694af",
+  "run_id": "20260518T172818Z_mouse_skull_d534f1",
   "volume_name": "IMPC_sample_data",
   "volume_sha256_voxels": "e9a958890f6529766f025feea9645e572ba218c73bda185262c40be5bdac5389",
   "shape_kji": [
@@ -14,7 +14,7 @@
   ],
   "threshold": 125.0,
   "n_candidates_initial": 50000,
-  "steps": 5,
+  "steps": 3,
   "history": [
     {
       "status": "ok",
@@ -31,15 +31,15 @@
       "click_positive": true,
       "skipped_inside": 0,
       "candidates_left": 49999,
-      "click_seconds": 0.762,
+      "click_seconds": 0.763,
       "made_new_segment": false,
       "segment_id": "Segment_1",
       "segment_voxels": 23814,
       "n_segments_before": 0,
       "n_segments_after": 1,
-      "_dt_s": 1.183,
+      "_dt_s": 1.18,
       "step": 0,
-      "step_wallclock_s": 1.184
+      "step_wallclock_s": 1.18
     },
     {
       "status": "ok",
@@ -56,15 +56,15 @@
       "click_positive": true,
       "skipped_inside": 107,
       "candidates_left": 49891,
-      "click_seconds": 0.971,
+      "click_seconds": 0.986,
       "made_new_segment": true,
       "segment_id": "Segment_2",
       "segment_voxels": 37157,
       "n_segments_before": 1,
       "n_segments_after": 2,
-      "_dt_s": 1.673,
+      "_dt_s": 1.685,
       "step": 1,
-      "step_wallclock_s": 1.674
+      "step_wallclock_s": 1.685
     },
     {
       "status": "ok",
@@ -81,65 +81,15 @@
       "click_positive": true,
       "skipped_inside": 466,
       "candidates_left": 49424,
-      "click_seconds": 1.034,
+      "click_seconds": 1.031,
       "made_new_segment": true,
       "segment_id": "Segment_3",
       "segment_voxels": 148653,
       "n_segments_before": 2,
       "n_segments_after": 3,
-      "_dt_s": 1.921,
+      "_dt_s": 1.928,
       "step": 2,
-      "step_wallclock_s": 1.921
-    },
-    {
-      "status": "ok",
-      "picked_ijk": [
-        164,
-        152,
-        278
-      ],
-      "intensity": 185.0,
-      "voxels_before": 151835,
-      "voxels_after": 155109,
-      "delta": 3274,
-      "new_voxels_at_picked": 1,
-      "click_positive": true,
-      "skipped_inside": 15410,
-      "candidates_left": 34013,
-      "click_seconds": 1.056,
-      "made_new_segment": true,
-      "segment_id": "Segment_4",
-      "segment_voxels": 3274,
-      "n_segments_before": 3,
-      "n_segments_after": 4,
-      "_dt_s": 2.193,
-      "step": 3,
-      "step_wallclock_s": 2.193
-    },
-    {
-      "status": "ok",
-      "picked_ijk": [
-        150,
-        106,
-        202
-      ],
-      "intensity": 183.0,
-      "voxels_before": 155109,
-      "voxels_after": 155816,
-      "delta": 707,
-      "new_voxels_at_picked": 1,
-      "click_positive": true,
-      "skipped_inside": 1766,
-      "candidates_left": 32246,
-      "click_seconds": 1.069,
-      "made_new_segment": true,
-      "segment_id": "Segment_5",
-      "segment_voxels": 707,
-      "n_segments_before": 4,
-      "n_segments_after": 5,
-      "_dt_s": 2.412,
-      "step": 4,
-      "step_wallclock_s": 2.412
+      "step_wallclock_s": 1.928
     }
   ],
   "args": {
@@ -147,7 +97,7 @@
     "reset_first": true,
     "intensity_percentile": 99.5,
     "max_candidates": 50000,
-    "max_steps": 5,
+    "max_steps": 3,
     "min_delta": 200,
     "patience": 3,
     "max_explosion_frac": 0.4,
@@ -157,10 +107,10 @@
     "label": "mouse_skull",
     "out_dir": "runs/impc_telem"
   },
-  "final_voxel_count": 155816,
-  "final_voxel_fraction": 0.0055,
+  "final_voxel_count": 151835,
+  "final_voxel_fraction": 0.0054,
   "stop_reason": {
     "reason": "max_steps",
-    "max_steps": 5
+    "max_steps": 3
   }
 }

@@ -255,18 +255,56 @@ try:
                     pass
             if pid:
                 out["fastapi_pid"] = pid
-                exe = None
+                # /proc/<pid>/exe resolves to the *actual* interpreter
+                # binary, which is normally the system Python — not the
+                # venv. The venv's `bin/python` is a symlink to the same
+                # system binary, so `exe` won't help us locate the venv.
+                # Instead, parse /proc/<pid>/cmdline (null-separated
+                # bytes) and use argv[0], which IS the venv path.
                 try:
-                    exe = os.readlink(f"/proc/{pid}/exe")
+                    raw = open(f"/proc/{pid}/cmdline", "rb").read()
+                    argv = [a.decode("utf-8", "replace")
+                            for a in raw.split(b"\\x00") if a]
+                    out["fastapi_cmdline"] = argv
+                except Exception as e:
+                    argv = []
+                    out["fastapi_cmdline_err"] = repr(e)
+                try:
+                    exe_link = os.readlink(f"/proc/{pid}/exe")
+                    out["fastapi_exe"] = exe_link
                 except Exception as e:
                     out["fastapi_exe_err"] = repr(e)
+                # Try to read the process's environ for VIRTUAL_ENV /
+                # PATH — useful for paper provenance.
                 try:
-                    out["fastapi_cmdline"] = open(f"/proc/{pid}/cmdline").read().replace("\\x00", " ").strip()
-                except Exception:
-                    pass
-                if exe:
-                    out["fastapi_exe"] = exe
-                    py_bin = exe
+                    env_raw = open(f"/proc/{pid}/environ", "rb").read()
+                    env_items = {}
+                    for entry in env_raw.split(b"\\x00"):
+                        if b"=" in entry:
+                            k, _, v = entry.partition(b"=")
+                            env_items[k.decode("utf-8", "replace")] = v.decode(
+                                "utf-8", "replace"
+                            )
+                    out["fastapi_environ"] = {
+                        k: env_items[k] for k in (
+                            "VIRTUAL_ENV", "CONDA_PREFIX", "PATH",
+                            "PYTHONPATH", "LD_LIBRARY_PATH",
+                            "CUDA_VISIBLE_DEVICES", "NNI_MODEL_DIR",
+                            "NNINTERACTIVE_DEVICE",
+                        ) if k in env_items
+                    }
+                except Exception as e:
+                    out["fastapi_environ_err"] = repr(e)
+                # Pick the venv python: prefer argv[0] (e.g.
+                # /media/volume/MyData/nninteractive/bin/python),
+                # fall back to /proc/<pid>/exe.
+                py_bin = None
+                if argv and "python" in os.path.basename(argv[0]).lower():
+                    py_bin = argv[0]
+                elif "fastapi_exe" in out:
+                    py_bin = out["fastapi_exe"]
+                out["fastapi_py_bin"] = py_bin
+                if py_bin:
                     # Plain version probe.
                     try:
                         ver = subprocess.check_output(

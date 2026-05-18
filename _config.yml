@@ -1,0 +1,47 @@
+# Transitional Jekyll config.
+#
+# The real documentation site is built by .github/workflows/docs.yml using
+# MkDocs Material. This file exists ONLY to keep the default GitHub Pages
+# Jekyll builder happy while the maintainer switches
+# Settings -> Pages -> Source from "Deploy from a branch" to "GitHub Actions".
+#
+# Once the Pages source is switched, this file becomes a no-op because the
+# default Jekyll builder is no longer auto-triggered. See
+# docs/DEPLOYMENT_NOTES.md for the full rollout sequence.
+#
+# We exclude every path containing MkDocs / mkdocs-macros Jinja syntax
+# (``{% set %}``, ``{{ kg_stats() }}``, etc.) that Jekyll's Liquid parser
+# cannot understand, plus all build artifacts and source code Jekyll has no
+# business processing.
+
+exclude:
+  - docs/
+  - mkdocs.yml
+  - requirements-docs.txt
+  - requirements.txt
+  - requirements-dev.txt
+  - requirements-test.txt
+  - main.py
+  - site/
+  - Tests/
+  - tests/
+  - data/
+  - runs/
+  - smoke_out/
+  - morpho/
+  - metadata_to_morphsource/
+  - .github/
+  - "*.py"
+  - "*.toml"
+  - "*.cfg"
+  - "*.ini"
+  - "*.sh"
+  - "Makefile"
+  - "compare.py"
+  - "verify_pixel_spacing.py"
+  - "run_comparison.py"
+  - "setup.py"
+
+# Disable plugins; we publish nothing meaningful here. The MkDocs site is
+# the real deal.
+plugins: []
