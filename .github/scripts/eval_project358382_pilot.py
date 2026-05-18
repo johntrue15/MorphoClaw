@@ -936,11 +936,25 @@ def run_specimen(pair: SpecimenPair, specimen_dir: Path,
     parent_logger.log(f"  voxelized GT: {gt_voxelized}  "
                        f"({gt_voxelized.stat().st_size:,} bytes)")
 
-    # 4. Push CT to remote Slicer
+    # 4. Push CT to remote Slicer (chunked /slicer/exec upload, then load)
     try:
         from remote_volume_io import push_volume
         push_name = f"pilot_{pair.physical_object_id}_ct"
-        push = push_volume(base_url, cropped_ct, name=push_name, timeout=900)
+        last_pct = [-1]
+
+        def _push_progress(sent: int, total: int) -> None:
+            pct = int(100 * sent / max(1, total))
+            if pct >= last_pct[0] + 10 or sent == total:
+                parent_logger.log(
+                    f"  upload {pct:>3d}%  ({sent:,}/{total:,} bytes)"
+                )
+                last_pct[0] = pct
+
+        push = push_volume(base_url, cropped_ct, name=push_name,
+                            chunk_bytes=6 * 1024 * 1024,
+                            per_chunk_timeout=60.0,
+                            load_timeout=240.0,
+                            progress=_push_progress)
     except Exception as exc:
         result.error = f"push_volume_failed: {exc!r}"
         parent_logger.log(f"  push_volume FAILED: {exc!r}")

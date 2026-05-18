@@ -32,6 +32,16 @@
   const VIS_NETWORK_CDN =
     "https://cdn.jsdelivr.net/npm/vis-network@9.1.6/standalone/umd/vis-network.min.js";
 
+  // Performance budget. Above ~2k visible nodes vis-network's physics engine
+  // becomes unusable on most browsers, so we cap what we feed to it and
+  // sample the highest-degree subset. Users can opt in to more via a slider.
+  const NODE_CAP_DEFAULT = 1500;
+  const NODE_CAP_MAX = 5000;
+  // Above this threshold we don't run an ongoing physics simulation; we
+  // stabilise once and freeze, which renders large graphs in a few seconds
+  // instead of locking the tab for 30 seconds.
+  const PHYSICS_AUTO_THRESHOLD = 800;
+
   function vendoredVisNetworkUrl() {
     if (!SELF_SCRIPT_URL) return null;
     try {
@@ -126,6 +136,10 @@
       search: document.getElementById("kgSearch"),
       degree: document.getElementById("kgDegree"),
       degreeValue: document.getElementById("kgDegreeValue"),
+      nodeCap: document.getElementById("kgNodeCap"),
+      nodeCapValue: document.getElementById("kgNodeCapValue"),
+      physics: document.getElementById("kgPhysics"),
+      status: document.getElementById("kgStatus"),
       fitBtn: document.getElementById("kgFitBtn"),
       resetBtn: document.getElementById("kgResetBtn"),
       meta: document.getElementById("kgMeta"),
@@ -160,32 +174,72 @@
       activeRelations: new Set(),
       minDegree: 0,
       search: "",
+      // Performance knobs (user-tunable from the sidebar).
+      nodeCap: NODE_CAP_DEFAULT,
+      // 'auto' | 'on' | 'off'. In 'auto' we enable physics only for small
+      // graphs so the cumulative view doesn't lock the browser.
+      physicsMode: "auto",
       // Caches of the original payload so filters can rebuild without re-fetching.
       raw: { nodes: [], edges: [], stats: {}, generated_at: null },
       nodeDegree: new Map(),
+      // Last-render diagnostics surfaced in the status banner.
+      lastRender: { rendered: 0, total: 0, sampled: false, physics: false },
     };
 
-    function buildGraphOptions() {
+    function shouldUsePhysics(nodeCount) {
+      if (state.physicsMode === "on") return true;
+      if (state.physicsMode === "off") return false;
+      return nodeCount <= PHYSICS_AUTO_THRESHOLD;
+    }
+
+    function buildGraphOptions(renderedNodes) {
+      const usePhysics = shouldUsePhysics(renderedNodes);
+      // Stabilisation budget scales inversely with node count. forceAtlas2
+      // is O(N^2) per tick, so we drop iterations sharply at scale.
+      const stabIters = usePhysics
+        ? Math.max(50, Math.min(200, Math.floor(20000 / Math.max(1, renderedNodes))))
+        : 0;
       return {
-        physics: {
-          solver: "forceAtlas2Based",
-          forceAtlas2Based: {
-            gravitationalConstant: -30,
-            springLength: 80,
-            springConstant: 0.04,
-          },
-          stabilization: { iterations: 200 },
-        },
+        physics: usePhysics
+          ? {
+              enabled: true,
+              solver: "forceAtlas2Based",
+              forceAtlas2Based: {
+                gravitationalConstant: -30,
+                springLength: 80,
+                springConstant: 0.04,
+              },
+              stabilization: {
+                enabled: true,
+                iterations: stabIters,
+                updateInterval: 25,
+                fit: true,
+              },
+              adaptiveTimestep: true,
+              maxVelocity: 30,
+            }
+          : { enabled: false },
+        layout: usePhysics
+          ? {}
+          : {
+              // Static layout helps vis-network skip the brutal physics
+              // bootstrap when we've turned physics off. Improved layout
+              // gives it a reasonable initial placement in one pass.
+              improvedLayout: true,
+              randomSeed: 7,
+            },
         interaction: {
           hover: true,
           tooltipDelay: 150,
           zoomView: true,
+          dragView: true,
           navigationButtons: false,
         },
         edges: {
-          smooth: { type: "continuous" },
-          color: { color: "#8b949e", opacity: 0.45 },
+          smooth: usePhysics ? { type: "continuous" } : false,
+          color: { color: "#8b949e", opacity: 0.4 },
           font: { size: 9, color: "#8b949e", strokeWidth: 0 },
+          width: 0.6,
         },
         nodes: {
           font: { size: 12, color: getCSSVar("--md-default-fg-color") || "#c9d1d9" },
@@ -220,8 +274,8 @@
 
       const q = state.search.trim().toLowerCase();
 
-      const visibleNodeIds = new Set();
-      const visNodes = [];
+      // Step 1: collect everything that survives the user-side filters.
+      const candidates = [];
       for (const n of state.raw.nodes) {
         if (state.activeTypes.size && !state.activeTypes.has(n.type)) continue;
         const d = degree.get(n.id) || 0;
@@ -235,6 +289,35 @@
             JSON.stringify(n.properties || {}).toLowerCase();
           if (!hay.includes(q)) continue;
         }
+        candidates.push({ node: n, degree: d });
+      }
+
+      // Step 2: enforce the node budget. We keep the highest-degree nodes
+      // so the rendered subgraph is the most connected slice. Search-hit
+      // nodes are always kept first (boosted) so the search remains useful
+      // even when its results are low-degree.
+      const cap = Math.max(50, Math.min(NODE_CAP_MAX, state.nodeCap | 0));
+      let sampled = false;
+      let kept = candidates;
+      if (candidates.length > cap) {
+        sampled = true;
+        const isHit = q
+          ? (n) =>
+              (n.label || "").toLowerCase().includes(q) ||
+              (n.id || "").toLowerCase().includes(q)
+          : () => false;
+        candidates.sort((a, b) => {
+          const ah = isHit(a.node) ? 1 : 0;
+          const bh = isHit(b.node) ? 1 : 0;
+          if (ah !== bh) return bh - ah;
+          return b.degree - a.degree;
+        });
+        kept = candidates.slice(0, cap);
+      }
+
+      const visibleNodeIds = new Set();
+      const visNodes = [];
+      for (const { node: n } of kept) {
         visibleNodeIds.add(n.id);
         visNodes.push({
           id: n.id,
@@ -260,10 +343,30 @@
         });
       }
 
+      // Apply physics options appropriate for the *current* render size.
+      // This is the single most important defence against the cumulative
+      // graph locking the browser: when rebuild() finds 4500 visible
+      // nodes, we flip physics off automatically.
+      const usePhysics = shouldUsePhysics(visNodes.length);
+      if (state.network) {
+        state.network.setOptions(buildGraphOptions(visNodes.length));
+      }
+
+      // Use update-in-place batch APIs. clear+add is far slower for vis
+      // DataSets in the multi-thousand-node case because each emits its
+      // own change event.
       state.nodes.clear();
       state.edges.clear();
       state.nodes.add(visNodes);
       state.edges.add(visEdges);
+
+      state.lastRender = {
+        rendered: visNodes.length,
+        total: candidates.length,
+        sampled,
+        physics: usePhysics,
+      };
+      setStatus();
 
       ui.empty.hidden = visNodes.length > 0;
 
@@ -277,6 +380,30 @@
       for (const t of allTypes) {
         const el = ui.typeFilters.querySelector(`[data-count="${t}"]`);
         if (el) el.textContent = typeCounts.get(t) || 0;
+      }
+    }
+
+    function setStatus() {
+      if (!ui.status) return;
+      const { rendered, total, sampled, physics } = state.lastRender;
+      if (rendered === 0 && total === 0) {
+        ui.status.hidden = true;
+        return;
+      }
+      const physicsLabel = physics ? "physics: on" : "physics: off";
+      if (sampled) {
+        ui.status.hidden = false;
+        ui.status.className = "kg-status kg-status-warn";
+        ui.status.innerHTML =
+          `Showing <strong>${rendered.toLocaleString()}</strong> of ` +
+          `<strong>${total.toLocaleString()}</strong> matching nodes ` +
+          `(highest-degree subset, ${physicsLabel}). ` +
+          `Use filters or raise the node cap to see more.`;
+      } else {
+        ui.status.hidden = false;
+        ui.status.className = "kg-status";
+        ui.status.innerHTML =
+          `Rendering <strong>${rendered.toLocaleString()}</strong> nodes (${physicsLabel}).`;
       }
     }
 
@@ -448,12 +575,17 @@
 
     function buildRunPicker(manifest) {
       const runs = (manifest && manifest.runs) || [];
-      const opts = [
-        `<option value="${dataUrl("knowledge_graph.json")}" data-run-file="" data-topic="Cumulative (latest)">Cumulative (latest)</option>`,
-      ];
+      const opts = [];
+
+      // Individual runs first (most recent at the top), each with its
+      // node count baked into the label so users can pick a manageable
+      // size at a glance.
       for (const r of runs.slice().reverse()) {
         const topic = shortTopic(r.topic) || r.file;
-        const label = `${formatTimestamp(r.generated_at)} — ${topic}`;
+        const stats = r.stats || {};
+        const nNodes = stats.total_nodes || 0;
+        const sizeHint = nNodes ? ` · ${nNodes.toLocaleString()} nodes` : "";
+        const label = `${formatTimestamp(r.generated_at)} — ${topic}${sizeHint}`;
         const titleAttr = escapeHTML(
           r.topic ||
             r.run_id ||
@@ -464,46 +596,75 @@
           `<option value="${dataUrl(`runs/${r.file}`)}" ` +
             `data-run-file="${escapeHTML(r.file)}" ` +
             `data-topic="${escapeHTML(r.topic || "")}" ` +
+            `data-size="${nNodes}" ` +
             `title="${titleAttr}">${escapeHTML(label)}</option>`,
         );
       }
+
+      // Cumulative goes LAST in the dropdown and is flagged as the
+      // performance-sensitive option, so it's an explicit user choice
+      // rather than the default landing experience.
+      opts.push(
+        `<option value="${dataUrl("knowledge_graph.json")}" ` +
+          `data-run-file="" data-topic="Cumulative" data-size="cumulative">` +
+          `— Cumulative across all runs (slow)</option>`,
+      );
+
       ui.runPicker.innerHTML = opts.join("");
+    }
+
+    function preferredInitialUrl(manifest) {
+      // The cumulative graph can be 8000+ nodes which locks vis-network's
+      // physics on first paint. Default to the most recent individual run
+      // instead. Users can pick "Cumulative" from the picker if they
+      // explicitly want the union view.
+      const runs = (manifest && manifest.runs) || [];
+      if (runs.length > 0) {
+        // _manifest.runs is ordered oldest -> newest; take the last entry.
+        const latest = runs[runs.length - 1];
+        return dataUrl(`runs/${latest.file}`);
+      }
+      return dataUrl("knowledge_graph.json");
     }
 
     function selectInitialRun(manifest) {
       // Honour ?run=<file> in the URL so example-query deep links from the
-      // submission page jump straight to the relevant snapshot. Falls back to
-      // the cumulative graph when no match is found.
-      let target = state.currentDataUrl;
+      // submission page jump straight to the relevant snapshot. Falls back
+      // to the most recent individual run (NOT cumulative) so the page
+      // never lands on a multi-thousand-node graph the user didn't ask for.
+      let target = preferredInitialUrl(manifest);
       try {
         const params = new URLSearchParams(window.location.search);
         const wanted = (params.get("run") || "").trim();
         if (wanted) {
-          const runs = (manifest && manifest.runs) || [];
-          // Match by exact filename, by case-insensitive substring on topic,
-          // or by case-insensitive substring on the local run id slug.
-          const lowered = wanted.toLowerCase();
-          const hit = runs.find(
-            (r) =>
-              r.file === wanted ||
-              (r.topic && r.topic.toLowerCase().includes(lowered)) ||
-              (r.local_run_id && r.local_run_id.toLowerCase().includes(lowered)) ||
-              (r.run_id && r.run_id.toLowerCase().includes(lowered)),
-          );
-          if (hit) {
-            target = dataUrl(`runs/${hit.file}`);
-            // Pre-select in the picker once it's built.
-            const pickerVal = target;
-            setTimeout(() => {
-              const opt = Array.from(ui.runPicker.options).find(
-                (o) => o.value === pickerVal,
-              );
-              if (opt) ui.runPicker.value = pickerVal;
-            }, 0);
+          if (wanted.toLowerCase() === "cumulative") {
+            target = dataUrl("knowledge_graph.json");
           } else {
-            console.warn("[KG] ?run=%s did not match any snapshot.", wanted);
+            const runs = (manifest && manifest.runs) || [];
+            const lowered = wanted.toLowerCase();
+            const hit = runs.find(
+              (r) =>
+                r.file === wanted ||
+                (r.topic && r.topic.toLowerCase().includes(lowered)) ||
+                (r.local_run_id &&
+                  r.local_run_id.toLowerCase().includes(lowered)) ||
+                (r.run_id && r.run_id.toLowerCase().includes(lowered)),
+            );
+            if (hit) {
+              target = dataUrl(`runs/${hit.file}`);
+            } else {
+              console.warn("[KG] ?run=%s did not match any snapshot.", wanted);
+            }
           }
         }
+        // Pre-select the matching option once the picker is built.
+        const pickerVal = target;
+        setTimeout(() => {
+          const opt = Array.from(ui.runPicker.options).find(
+            (o) => o.value === pickerVal,
+          );
+          if (opt) ui.runPicker.value = pickerVal;
+        }, 0);
       } catch (err) {
         console.warn("[KG] Could not parse URL params:", err);
       }
@@ -513,18 +674,35 @@
 
     async function loadAndRender(url) {
       console.info("[KG] Loading graph data:", url);
+
+      // Show a loading hint immediately so the UI doesn't appear frozen
+      // while we fetch the (potentially MB-sized) JSON.
+      if (ui.status) {
+        ui.status.hidden = false;
+        ui.status.className = "kg-status";
+        ui.status.textContent = "Loading snapshot…";
+      }
+      if (ui.meta) {
+        ui.meta.textContent = "Loading…";
+      }
+      state.currentDataUrl = url;
+
+      const t0 = performance.now();
       const payload = await fetchJSON(url, {
         nodes: [],
         edges: [],
         stats: {},
         generated_at: null,
       });
+      const fetchMs = (performance.now() - t0).toFixed(0);
       console.info(
-        "[KG] Loaded %d nodes / %d edges (stats: %o)",
+        "[KG] Loaded %d nodes / %d edges in %sms (stats: %o)",
         (payload.nodes || []).length,
         (payload.edges || []).length,
+        fetchMs,
         payload.stats || {},
       );
+
       // Hide the empty-state pre-emptively when we know real data came
       // back; rebuild() will toggle it again if the active filter set
       // happens to filter every node out.
@@ -540,17 +718,36 @@
       buildFilters();
       setMeta(payload);
 
-      if (!state.network) {
-        const data = { nodes: state.nodes, edges: state.edges };
-        state.network = new vis.Network(ui.graph, data, buildGraphOptions());
-        state.network.on("click", (params) => {
-          if (params.nodes.length > 0) {
-            showDetails(params.nodes[0]);
-          } else {
-            ui.details.hidden = true;
-          }
-        });
+      // Re-create the vis.Network for each new dataset so physics options
+      // and DataSet bindings start clean. Reusing the old instance with
+      // setOptions(...) is fine for filter-driven rebuilds, but a fresh
+      // dataset deserves a fresh stabilisation pass.
+      if (state.network) {
+        state.network.destroy();
+        state.network = null;
+        // Reset DataSets so the new network doesn't inherit stale nodes.
+        state.nodes = new vis.DataSet();
+        state.edges = new vis.DataSet();
       }
+      const data = { nodes: state.nodes, edges: state.edges };
+      // We pre-compute estimated render size to choose physics correctly
+      // on first paint. The actual render goes through rebuild() below.
+      const estimate = Math.min(
+        state.nodeCap,
+        (payload.nodes || []).length || 0,
+      );
+      state.network = new vis.Network(ui.graph, data, buildGraphOptions(estimate));
+      state.network.on("click", (params) => {
+        if (params.nodes.length > 0) {
+          showDetails(params.nodes[0]);
+        } else {
+          ui.details.hidden = true;
+        }
+      });
+      state.network.once("stabilizationIterationsDone", () => {
+        console.info("[KG] Stabilisation complete.");
+      });
+
       rebuild();
     }
 
@@ -573,6 +770,10 @@
       ui.degreeValue.textContent = "0";
       state.search = "";
       state.minDegree = 0;
+      state.nodeCap = NODE_CAP_DEFAULT;
+      if (ui.nodeCap) ui.nodeCap.value = String(NODE_CAP_DEFAULT);
+      if (ui.nodeCapValue)
+        ui.nodeCapValue.textContent = String(NODE_CAP_DEFAULT);
       ui.typeFilters.querySelectorAll("input[type=checkbox]").forEach((cb) => {
         cb.checked = true;
         state.activeTypes.add(cb.getAttribute("data-kg-type"));
@@ -585,8 +786,51 @@
       if (state.network) state.network.fit({ animation: true });
     });
     ui.runPicker.addEventListener("change", (ev) => {
+      const opt = ev.target.options[ev.target.selectedIndex];
+      const isCumulative =
+        opt && opt.getAttribute("data-size") === "cumulative";
+      if (isCumulative) {
+        // Confirm before loading the cumulative view — without this an
+        // accidental click could lock up the tab for tens of seconds on
+        // slower devices.
+        const ok = window.confirm(
+          "The cumulative graph contains ~8,000 nodes from every run.\n\n" +
+            "It will be sampled to the current node-cap (" +
+            state.nodeCap +
+            ") for performance. Continue?",
+        );
+        if (!ok) {
+          // Revert the picker to whatever was active before.
+          ev.target.value = state.currentDataUrl;
+          return;
+        }
+      }
       loadAndRender(ev.target.value);
     });
+
+    if (ui.nodeCap) {
+      ui.nodeCap.min = "100";
+      ui.nodeCap.max = String(NODE_CAP_MAX);
+      ui.nodeCap.step = "100";
+      ui.nodeCap.value = String(state.nodeCap);
+      if (ui.nodeCapValue)
+        ui.nodeCapValue.textContent = String(state.nodeCap);
+      ui.nodeCap.addEventListener("input", (ev) => {
+        state.nodeCap = parseInt(ev.target.value, 10) || NODE_CAP_DEFAULT;
+        if (ui.nodeCapValue)
+          ui.nodeCapValue.textContent = String(state.nodeCap);
+        rebuild();
+      });
+    }
+    if (ui.physics) {
+      ui.physics.value = state.physicsMode;
+      ui.physics.addEventListener("change", (ev) => {
+        state.physicsMode = ev.target.value || "auto";
+        // Re-create the network so the new physics setting applies to the
+        // initial layout, not just future drag events.
+        loadAndRender(state.currentDataUrl);
+      });
+    }
     ui.detailsClose.addEventListener("click", () => {
       ui.details.hidden = true;
     });

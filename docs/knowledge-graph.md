@@ -16,56 +16,81 @@ publishes a new snapshot.
 
 <div id="kg-app" class="kg-app">
   <aside class="kg-sidebar" id="kgSidebar">
-    <div class="kg-section">
-      <div class="kg-section-title">Snapshot</div>
+    <div class="kg-card">
       <select id="kgRunPicker" class="kg-select" aria-label="Select snapshot"></select>
       <div class="kg-meta" id="kgMeta">Loading&hellip;</div>
     </div>
 
-    <div class="kg-section">
-      <div class="kg-section-title">Search</div>
-      <input
-        type="search"
-        id="kgSearch"
-        class="kg-input"
-        placeholder="Search labels, ids, taxa&hellip;"
-        autocomplete="off"
-      />
-    </div>
+    <input
+      type="search"
+      id="kgSearch"
+      class="kg-input"
+      placeholder="Search labels, ids, taxa&hellip;"
+      autocomplete="off"
+      aria-label="Search the rendered graph"
+    />
 
-    <div class="kg-section">
-      <div class="kg-section-title">Node types</div>
-      <div id="kgTypeFilters" class="kg-checkbox-group" role="group" aria-label="Toggle node types"></div>
-    </div>
-
-    <div class="kg-section">
-      <div class="kg-section-title">Relations</div>
-      <div id="kgRelationFilters" class="kg-checkbox-group" role="group" aria-label="Toggle relation types"></div>
-    </div>
-
-    <div class="kg-section">
-      <div class="kg-section-title">Min degree
-        <span class="kg-pill" id="kgDegreeValue">0</span>
+    <details class="kg-section" open>
+      <summary>Filters</summary>
+      <div class="kg-section-body">
+        <div class="kg-subhead">Node types</div>
+        <div id="kgTypeFilters" class="kg-checkbox-group" role="group" aria-label="Toggle node types"></div>
+        <div class="kg-subhead">Relations</div>
+        <div id="kgRelationFilters" class="kg-checkbox-group" role="group" aria-label="Toggle relation types"></div>
       </div>
-      <input
-        type="range"
-        id="kgDegree"
-        class="kg-range"
-        min="0"
-        max="10"
-        step="1"
-        value="0"
-        aria-label="Hide nodes with fewer than N connections"
-      />
-    </div>
+    </details>
 
-    <div class="kg-section">
+    <details class="kg-section">
+      <summary>Performance</summary>
+      <div class="kg-section-body">
+        <label class="kg-control-label">
+          Max rendered nodes
+          <span class="kg-pill" id="kgNodeCapValue">1500</span>
+        </label>
+        <input
+          type="range"
+          id="kgNodeCap"
+          class="kg-range"
+          min="100"
+          max="5000"
+          step="100"
+          value="1500"
+          aria-label="Limit number of nodes rendered for performance"
+        />
+
+        <label class="kg-control-label">
+          Min degree
+          <span class="kg-pill" id="kgDegreeValue">0</span>
+        </label>
+        <input
+          type="range"
+          id="kgDegree"
+          class="kg-range"
+          min="0"
+          max="10"
+          step="1"
+          value="0"
+          aria-label="Hide nodes with fewer than N connections"
+        />
+
+        <label class="kg-control-label" for="kgPhysics">Physics</label>
+        <select id="kgPhysics" class="kg-select" aria-label="Physics simulation mode">
+          <option value="auto" selected>Auto (recommended)</option>
+          <option value="on">Always on</option>
+          <option value="off">Always off</option>
+        </select>
+      </div>
+    </details>
+
+    <div class="kg-actions">
       <button id="kgFitBtn" class="kg-btn">Fit to screen</button>
-      <button id="kgResetBtn" class="kg-btn kg-btn-secondary">Reset filters</button>
+      <button id="kgResetBtn" class="kg-btn kg-btn-secondary">Reset</button>
     </div>
   </aside>
 
   <div class="kg-stage">
+    <div id="kgStatus" class="kg-status" hidden></div>
+
     <div id="kgGraph" class="kg-graph" role="img" aria-label="Knowledge graph network visualization"></div>
 
     <div id="kgEmpty" class="kg-empty" hidden>
